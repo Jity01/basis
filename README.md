@@ -34,6 +34,7 @@ context-manager/
 
 - **Node.js** 18+
 - **pnpm** 9.x (`npm install -g pnpm`)
+- **ffmpeg** (includes `ffmpeg` and `ffprobe` on `PATH`) — used for frame extraction. For local development on macOS: `brew install ffmpeg`. The MVP assumes ffmpeg is installed; it is not bundled.
 
 ## Quick Start
 
@@ -71,9 +72,22 @@ Then run the desktop app:
 cd apps/desktop && electron .
 ```
 
-## Upcoming Milestones
+## Milestone 3: Frame Extraction ✅
 
-- **Milestone 3:** Frame extraction via ffmpeg
+- **`packages/core/src/frames.ts`**
+  - `extractFrames(videoPath, numFrames, maxDim?)` — uses ffmpeg to sample `numFrames` JPEGs at evenly spaced times (centered in equal duration slices), downscaled so the longest edge ≤ `maxDim` (default **1568**). Writes to a temp directory and returns absolute paths in time order.
+  - `selectRepresentativeFrames(framePaths, keep)` — picks `keep` paths using consecutive **file-size** deltas as a simple change signal; always includes the first and last frame when `keep >= 2`.
+- Requires **ffmpeg** on `PATH` (see Requirements).
+
+**Manual test (Milestone 3):**
+
+1. Use any screen-recording chunk from `~/.context/.tmp/` (e.g. `.webm`) or another short video (`.mov` / `.mp4`).
+2. From the repo root, build core: `pnpm --filter @context-manager/core build`
+3. Run Node in the repo and call `extractFrames(path, 15, 1568)` from `@context-manager/core` (or a small script that imports `dist/frames.js`).
+4. Confirm 15 JPEGs exist, order matches time order, and `ffprobe` reports `max(width,height) <= 1568` for each.
+5. Call `selectRepresentativeFrames(paths, 5)` and confirm 5 paths, including the first and last of the 15.
+
+## Upcoming Milestones
 - **Milestone 4:** Tagging with GLM via Ollama
 - **Milestone 5:** Storage to `~/.context/YYYY/MM/DD/...`
 - **Milestone 6:** Pipeline orchestration
