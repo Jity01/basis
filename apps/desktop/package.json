@@ -1,0 +1,33 @@
+{
+  "name": "@context-manager/desktop",
+  "version": "0.0.1",
+  "private": true,
+  "main": "dist-main/main.js",
+  "scripts": {
+    "build": "pnpm build:packages && pnpm build:main && pnpm build:renderer",
+    "build:packages": "pnpm --filter @context-manager/config build && pnpm --filter @context-manager/core build",
+    "build:main": "tsc -p tsconfig.main.json",
+    "build:renderer": "vite build",
+    "dev": "pnpm build:packages && pnpm build:main && concurrently -k \"vite --port 5173\" \"wait-on http://127.0.0.1:5173 && node scripts/start-electron.js\"",
+    "dev:vite": "vite",
+    "dev:electron": "node scripts/start-electron.js"
+  },
+  "dependencies": {
+    "@context-manager/config": "workspace:*",
+    "@context-manager/core": "workspace:*",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.1.2",
+    "cross-env": "^7.0.3",
+    "wait-on": "^8.0.1",
+    "electron": "^33.2.0",
+    "typescript": "^5.6.0",
+    "vite": "^6.0.3"
+  }
+}
