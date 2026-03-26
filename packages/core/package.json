@@ -6,10 +6,13 @@
   "types": "./dist/index.d.ts",
   "scripts": {
     "build": "tsc",
-    "dev": "tsc --watch"
+    "dev": "tsc --watch",
+    "tag-test": "node ./scripts/run-tag-chunk.mjs"
   },
   "dependencies": {
-    "@context-manager/config": "workspace:*"
+    "@anthropic-ai/sdk": "^0.39.0",
+    "@context-manager/config": "workspace:*",
+    "dotenv": "^16.4.7"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
