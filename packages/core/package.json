@@ -7,7 +7,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "tag-test": "node ./scripts/run-tag-chunk.mjs"
+    "tag-test": "node ./tests/run-tag-chunk.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",

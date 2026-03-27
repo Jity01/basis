@@ -1,4 +1,3 @@
-import Anthropic from "@anthropic-ai/sdk";
 import * as dotenv from "dotenv";
 import * as fs from "fs/promises";
 import * as path from "path";
@@ -6,20 +5,34 @@ import * as path from "path";
 /** Load repo-root `.env` when running from compiled `dist/` (packages/core/dist). */
 dotenv.config({ path: path.join(__dirname, "../../../.env") });
 
-const DEFAULT_MODEL = "claude-sonnet-4-20250514";
-
-function anthropicModel(): string {
-  return process.env.ANTHROPIC_MODEL?.trim() || DEFAULT_MODEL;
-}
+const DEFAULT_MODEL = "gpt-4o-mini";
+const MIN_SECONDS_BETWEEN_REQUESTS = 60;
+let lastRequestAtMs = 0;
 
 function getApiKey(): string {
-  const key = process.env.ANTHROPIC_API_KEY?.trim();
+  const key = process.env.OPENAI_API_KEY?.trim();
   if (!key) {
     throw new Error(
-      "Missing ANTHROPIC_API_KEY. Copy .env.example to .env at the repo root and set your key."
+      "Missing OPENAI_API_KEY."
     );
   }
   return key;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForRateLimitWindow(): Promise<void> {
+  if (lastRequestAtMs <= 0) {
+    return;
+  }
+
+  const elapsedSeconds = (Date.now() - lastRequestAtMs) / 1000;
+  const waitSeconds = Math.max(0, MIN_SECONDS_BETWEEN_REQUESTS - elapsedSeconds);
+  if (waitSeconds > 0) {
+    await sleep(waitSeconds * 1000);
+  }
 }
 
 function buildAnalysisPrompt(
@@ -42,10 +55,13 @@ You are looking at ${numFrames} sequential screenshots from a screen recording,
 covering ${startTime} to ${endTime}, evenly spaced.${contextBlock}
 
 INSTRUCTIONS:
-- Read and understand the actual text on screen carefully.
-- Focus on INTENT and CONTENT. What is the user trying to do? What problem are they solving?
-- If the user is in a conversation (chat, email, etc.), understand the full conversation.
+- Read and understand the actual text on screen carefully. Do not just rely on
+the visual layout.
+- Focus on INTENT and CONTENT. What is the user trying to do?
+  What are they thinking about? What problem are they solving?
+- If the user is in a conversation (chat, email, etc.), summarize both sides.
 - Name specific entities as needed.
+- Briefly mention the platform the user is on if not already mentioned.
 
 GOOD SUMMARY EXAMPLE:
 "User is writing a cold outreach email to a partner at Morrison & Foerster
@@ -62,9 +78,14 @@ multiple tabs open. They appear to be doing development work with a dark-themed
 IDE visible. The activity suggests active research and coding."
 
 The bad example is useless because it describes what things look like, not what
-the user is actually doing. It contains zero searchable details.
+the user is actually doing or thinking about. It contains zero searchable details.
 
-Write your summary as a single paragraph. Get to the point. Be concise.
+Write your summary as a single concise paragraph; do not be verbose. Keep your
+analysis to the minimum and more so describe what's happening.
+
+IMPORTANT: DO NOT REPEAT YOURSELF. If you've said something in the previous chunk,
+don't say it again in this chunk summary. Focus only on what is new and different in
+this chunk. If there absolutely aren't any new things, just do not say anything.
 `;
 }
 
@@ -82,24 +103,18 @@ function mimeForPath(filePath: string): "image/jpeg" | "image/png" | "image/gif"
   return "image/jpeg";
 }
 
-function textFromBlocks(content: Anthropic.Messages.ContentBlock[]): string {
-  const parts: string[] = [];
-  for (const block of content) {
-    if (block.type === "text") {
-      parts.push(block.text);
-    }
-  }
-  return parts.join("\n").trim();
-}
-
 /**
- * Reads frame files as base64 and sends them to **Claude** (Anthropic Messages API)
- * with vision. Requires **`ANTHROPIC_API_KEY`** (see repo-root `.env.example`).
+ * Reads frame files as base64 and sends them to OpenAI Chat Completions (vision).
+ * Requires `OPENAI_API_KEY` (see repo-root `.env.example`).
  *
  * Environment:
- * - `ANTHROPIC_API_KEY` — required
- * - `ANTHROPIC_MODEL` — optional, default `claude-sonnet-4-20250514` (must be a vision-capable model)
+ * - `OPENAI_API_KEY` — required
+ * - `OPENAI_MODEL` — optional, default `gpt-4o-mini` (must be vision-capable)
  */
+type OpenAIContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } };
+
 export async function tagChunk(
   framePaths: string[],
   startTime: string,
@@ -114,7 +129,7 @@ export async function tagChunk(
     rollingContext
   );
 
-  const content: Anthropic.Messages.ContentBlockParam[] = [
+  const content: OpenAIContentPart[] = [
     { type: "text", text: promptText },
   ];
 
@@ -123,33 +138,47 @@ export async function tagChunk(
     const b64 = buf.toString("base64");
     const mediaType = mimeForPath(fp);
     content.push({
-      type: "image",
-      source: {
-        type: "base64",
-        media_type: mediaType,
-        data: b64,
+      type: "image_url",
+      image_url: {
+        url: `data:${mediaType};base64,${b64}`,
       },
     });
   }
 
-  const client = new Anthropic({ apiKey: getApiKey() });
-
-  let response: Anthropic.Messages.Message;
+  let responseContent = "";
   try {
-    response = await client.messages.create({
-      model: anthropicModel(),
-      max_tokens: 4096,
-      messages: [{ role: "user", content }],
+    await waitForRateLimitWindow();
+    lastRequestAtMs = Date.now();
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${getApiKey()}`,
+      },
+      body: JSON.stringify({
+        model: DEFAULT_MODEL,
+        max_tokens: 4096,
+        messages: [{ role: "user", content }],
+      }),
     });
+
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(`HTTP ${response.status}: ${body}`);
+    }
+
+    const json = (await response.json()) as {
+      choices?: Array<{ message?: { content?: string | null } }>;
+    };
+    responseContent = json.choices?.[0]?.message?.content?.trim() ?? "";
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
-    throw new Error(`Anthropic Messages API failed: ${msg}`);
+    throw new Error(`OpenAI Chat Completions API failed: ${msg}`);
   }
 
-  const raw = textFromBlocks(response.content);
-  if (!raw) {
-    throw new Error("Anthropic returned no text content");
+  if (!responseContent) {
+    throw new Error("OpenAI returned no text content");
   }
 
-  return raw;
+  return responseContent;
 }

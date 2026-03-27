@@ -1,6 +1,6 @@
 /**
- * Smoke-test: extractFrames(15) + tagChunk via Anthropic Claude.
- * Set ANTHROPIC_API_KEY in repo-root .env (see .env.example).
+ * Smoke-test: extractFrames(15) + tagChunk via OpenAI GPT-4o mini.
+ * Set OPENAI_API_KEY in repo-root .env (see .env.example).
  *
  * Usage (from repo root):
  *   pnpm --filter @context-manager/core build
@@ -9,17 +9,17 @@
 
 import { extractFrames, tagChunk } from "../dist/index.js";
 
-const video = process.argv[2];
-if (!video) {
-  console.error("Usage: node scripts/run-tag-chunk.mjs <path-to-video>");
-  process.exit(1);
-}
+// const video = process.argv[2];
+// if (!video) {
+//   console.error("Usage: node scripts/run-tag-chunk.mjs <path-to-video>");
+//   process.exit(1);
+// }
 
-console.log("Video:", video);
+// console.log("Video:", video);
 console.log("Getting 15 frames…");
 const paths = ["/Users/jity/.context/.tmp/extracted-frames/frame_000.jpg", "/Users/jity/.context/.tmp/extracted-frames/frame_001.jpg", "/Users/jity/.context/.tmp/extracted-frames/frame_002.jpg", "/Users/jity/.context/.tmp/extracted-frames/frame_003.jpg", "/Users/jity/.context/.tmp/extracted-frames/frame_004.jpg", "/Users/jity/.context/.tmp/extracted-frames/frame_005.jpg", "/Users/jity/.context/.tmp/extracted-frames/frame_006.jpg", "/Users/jity/.context/.tmp/extracted-frames/frame_007.jpg", "/Users/jity/.context/.tmp/extracted-frames/frame_008.jpg", "/Users/jity/.context/.tmp/extracted-frames/frame_009.jpg", "/Users/jity/.context/.tmp/extracted-frames/frame_010.jpg", "/Users/jity/.context/.tmp/extracted-frames/frame_011.jpg", "/Users/jity/.context/.tmp/extracted-frames/frame_012.jpg", "/Users/jity/.context/.tmp/extracted-frames/frame_013.jpg", "/Users/jity/.context/.tmp/extracted-frames/frame_014.jpg"];
 
-console.log("Calling tagChunk (Anthropic Claude)…");
+console.log("Calling tagChunk (OpenAI GPT-4o mini)…");
 const summary = await tagChunk(paths, "00:00:00", "00:05:00", "");
 
 console.log("\n--- SUMMARY ---\n");
