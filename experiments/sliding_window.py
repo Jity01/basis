@@ -104,7 +104,7 @@ IDE visible. The activity suggests active research and coding."
 The bad example is useless because it describes what things look like, not what
 the user is actually doing or thinking about. It contains zero searchable details.
  
-Write your summary as a single detailed paragraph.
+Write your summary as a single detailed paragraph; do not be verbose.
 """
 
     content = [
