@@ -6,3 +6,4 @@ dist-renderer
 .env
 .DS_Store
 __pycache__
+issues.txt
