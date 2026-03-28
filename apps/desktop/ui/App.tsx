@@ -78,7 +78,6 @@ export default function App() {
       const chunkDurationMs = await contextManager.getChunkDurationMs();
       rotationTimerRef.current = setInterval(async () => {
         if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
-          mediaRecorderRef.current.stop();
           mediaRecorderRef.current.onstop = async () => {
             const { filePath } = await contextManager.rotateRecording();
             const mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
@@ -98,6 +97,7 @@ export default function App() {
             newRecorder.start(1000);
             mediaRecorderRef.current = newRecorder;
           };
+          mediaRecorderRef.current.stop();
         }
       }, chunkDurationMs);
 
@@ -123,7 +123,6 @@ export default function App() {
     setDuration(0);
 
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
-      mediaRecorderRef.current.stop();
       mediaRecorderRef.current.onstop = async () => {
         await contextManager.stopRecording();
         streamRef.current?.getTracks().forEach((t) => t.stop());
@@ -131,6 +130,7 @@ export default function App() {
         mediaRecorderRef.current = null;
         setIsRecording(false);
       };
+      mediaRecorderRef.current.stop();
     } else {
       await contextManager.stopRecording();
       streamRef.current?.getTracks().forEach((t) => t.stop());

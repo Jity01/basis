@@ -6,7 +6,7 @@ import * as path from "path";
 dotenv.config({ path: path.join(__dirname, "../../../.env") });
 
 const DEFAULT_MODEL = "gpt-4o-mini";
-const MIN_SECONDS_BETWEEN_REQUESTS = 60;
+const MIN_SECONDS_BETWEEN_REQUESTS = 70;
 let lastRequestAtMs = 0;
 
 function getApiKey(): string {
@@ -148,7 +148,6 @@ export async function tagChunk(
   let responseContent = "";
   try {
     await waitForRateLimitWindow();
-    lastRequestAtMs = Date.now();
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -161,6 +160,7 @@ export async function tagChunk(
         messages: [{ role: "user", content }],
       }),
     });
+    lastRequestAtMs = Date.now();
 
     if (!response.ok) {
       const body = await response.text();
