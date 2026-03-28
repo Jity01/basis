@@ -2,10 +2,25 @@ import { useState, useEffect, useRef, useCallback } from "react";
 
 const contextManager = window.contextManager;
 
+type ProcessingStatus = {
+  isProcessing: boolean;
+  currentChunk: number;
+  totalChunks: number;
+  pendingChunks: number;
+  trigger: "idle" | "manual" | null;
+};
+
 export default function App() {
   const [isRecording, setIsRecording] = useState(false);
   const [duration, setDuration] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [processingStatus, setProcessingStatus] = useState<ProcessingStatus>({
+    isProcessing: false,
+    currentChunk: 0,
+    totalChunks: 0,
+    pendingChunks: 0,
+    trigger: null,
+  });
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -131,12 +146,57 @@ export default function App() {
     return `${m}:${s.toString().padStart(2, "0")}`;
   };
 
+  const refreshProcessingStatus = useCallback(async () => {
+    if (!contextManager) {
+      return;
+    }
+    const status = await contextManager.getProcessingStatus();
+    setProcessingStatus(status);
+  }, []);
+
+  const processNow = useCallback(async () => {
+    try {
+      setError(null);
+      const result = await contextManager.processNow();
+      if (!result.started) {
+        await refreshProcessingStatus();
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to process backlog");
+    }
+  }, [refreshProcessingStatus]);
+
+  const processingCurrent = Math.max(processingStatus.currentChunk, 1);
+  const processingTotal = Math.max(processingStatus.totalChunks, processingCurrent);
+
+  const statusLine = (() => {
+    if (processingStatus.isProcessing) {
+      return `Processing chunk ${processingCurrent}/${processingTotal}`;
+    }
+    if (isRecording) {
+      return "Recording";
+    }
+    if (processingStatus.pendingChunks > 0) {
+      return `Idle - ${processingStatus.pendingChunks} chunks pending`;
+    }
+    return "All caught up";
+  })();
+
   useEffect(() => {
+    if (!contextManager) {
+      return;
+    }
+    void refreshProcessingStatus();
+    const unsubscribe = contextManager.onProcessingStatus((status) => {
+      setProcessingStatus(status);
+    });
+
     return () => {
+      unsubscribe();
       if (rotationTimerRef.current) clearInterval(rotationTimerRef.current);
       if (durationTimerRef.current) clearInterval(durationTimerRef.current);
     };
-  }, []);
+  }, [refreshProcessingStatus]);
 
   return (
     <div style={{ padding: 24, fontFamily: "system-ui, sans-serif" }}>
@@ -162,6 +222,30 @@ export default function App() {
         >
           {isRecording ? "Stop Recording" : "Start Recording"}
         </button>
+        <button
+          onClick={processNow}
+          disabled={processingStatus.pendingChunks === 0 || processingStatus.isProcessing}
+          style={{
+            marginLeft: 12,
+            padding: "12px 24px",
+            fontSize: 16,
+            backgroundColor:
+              processingStatus.pendingChunks === 0 || processingStatus.isProcessing
+                ? "#999"
+                : "#0a7",
+            color: "#fff",
+            border: "none",
+            borderRadius: 8,
+            cursor:
+              processingStatus.pendingChunks === 0 || processingStatus.isProcessing
+                ? "not-allowed"
+                : "pointer",
+          }}
+        >
+          {processingStatus.isProcessing
+            ? `Processing chunk ${processingCurrent}/${processingTotal}...`
+            : "Process Now"}
+        </button>
 
         {isRecording && (
           <span style={{ marginLeft: 16, fontSize: 18, fontWeight: 500 }}>
@@ -169,6 +253,7 @@ export default function App() {
           </span>
         )}
       </div>
+      <p style={{ marginTop: 16, color: "#555" }}>{statusLine}</p>
     </div>
   );
 }
