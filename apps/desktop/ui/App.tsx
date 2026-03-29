@@ -26,6 +26,72 @@ export default function App() {
   const streamRef = useRef<MediaStream | null>(null);
   const rotationTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const durationTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const isRotatingRef = useRef(false);
+  const stoppingRef = useRef(false);
+  const pendingChunkSendsRef = useRef(new Set<Promise<void>>());
+
+  async function createScreenStream(): Promise<MediaStream> {
+    const sources = await contextManager.getDesktopSources({ types: ["screen"] });
+    if (sources.length === 0) {
+      throw new Error("No screen source available");
+    }
+
+    const sourceId = sources[0].id;
+    return navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: {
+        mandatory: {
+          chromeMediaSource: "desktop",
+          chromeMediaSourceId: sourceId,
+        },
+      } as unknown as MediaTrackConstraints,
+    });
+  }
+
+  async function flushPendingChunkSends(): Promise<void> {
+    if (pendingChunkSendsRef.current.size === 0) {
+      return;
+    }
+    await Promise.allSettled(Array.from(pendingChunkSendsRef.current));
+  }
+
+  function wireRecorder(recorder: MediaRecorder) {
+    recorder.ondataavailable = (e) => {
+      if (e.data.size === 0) return;
+      const sendPromise = e.data
+        .arrayBuffer()
+        .then((buf) => {
+          contextManager.sendRecordingChunk(buf);
+        })
+        .catch((err) => {
+          setError(err instanceof Error ? err.message : "Failed to read recorded chunk");
+        })
+        .finally(() => {
+          pendingChunkSendsRef.current.delete(sendPromise);
+        });
+      pendingChunkSendsRef.current.add(sendPromise);
+    };
+
+    recorder.onerror = (event) => {
+      const maybeError = (event as unknown as { error?: Error }).error;
+      setError(maybeError?.message ?? "MediaRecorder error");
+    };
+  }
+
+  const startRecorderForCurrentFile = useCallback(async () => {
+    const stream = await createScreenStream();
+    streamRef.current = stream;
+    const mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
+      ? "video/webm;codecs=vp9"
+      : "video/webm";
+    const recorder = new MediaRecorder(stream, {
+      mimeType,
+      videoBitsPerSecond: 2500000,
+    });
+    wireRecorder(recorder);
+    recorder.start(1000);
+    mediaRecorderRef.current = recorder;
+  }, []);
 
   const startCapture = useCallback(async () => {
     try {
@@ -35,70 +101,43 @@ export default function App() {
           "contextManager is not available. Run the app with Electron (pnpm dev), not in a browser."
         );
       }
-      const sources = await contextManager.getDesktopSources({
-        types: ["screen"],
-      });
-      if (sources.length === 0) {
-        throw new Error("No screen source available");
-      }
-      const sourceId = sources[0].id;
 
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: false,
-        video: {
-          mandatory: {
-            chromeMediaSource: "desktop",
-            chromeMediaSourceId: sourceId,
-          },
-        } as unknown as MediaTrackConstraints,
-      });
-      streamRef.current = stream;
+      stoppingRef.current = false;
+      isRotatingRef.current = false;
 
       await contextManager.startRecording();
+      await startRecorderForCurrentFile();
 
-      const mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
-        ? "video/webm;codecs=vp9"
-        : "video/webm";
-      const recorder = new MediaRecorder(stream, {
-        mimeType,
-        videoBitsPerSecond: 2500000,
-      });
+      const rotateOnce = async (): Promise<void> => {
+        if (isRotatingRef.current || stoppingRef.current) return;
+        const current = mediaRecorderRef.current;
+        if (!current || current.state !== "recording") return;
 
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) {
-          e.data.arrayBuffer().then((buf) => {
-            contextManager.sendRecordingChunk(buf);
-          });
-        }
+        isRotatingRef.current = true;
+        current.onstop = async () => {
+          try {
+            if (stoppingRef.current) return;
+            await flushPendingChunkSends();
+            streamRef.current?.getTracks().forEach((t) => t.stop());
+            streamRef.current = null;
+
+            await contextManager.rotateRecording();
+            await startRecorderForCurrentFile();
+          } catch (err) {
+            setError(err instanceof Error ? err.message : "Failed rotating recorder");
+            setIsRecording(false);
+            stoppingRef.current = true;
+          } finally {
+            isRotatingRef.current = false;
+          }
+        };
+
+        current.stop();
       };
 
-      recorder.start(1000); // Collect chunks every second
-      mediaRecorderRef.current = recorder;
-
       const chunkDurationMs = await contextManager.getChunkDurationMs();
-      rotationTimerRef.current = setInterval(async () => {
-        if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
-          mediaRecorderRef.current.onstop = async () => {
-            const { filePath } = await contextManager.rotateRecording();
-            const mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
-              ? "video/webm;codecs=vp9"
-              : "video/webm";
-            const newRecorder = new MediaRecorder(streamRef.current!, {
-              mimeType,
-              videoBitsPerSecond: 2500000,
-            });
-            newRecorder.ondataavailable = (e) => {
-              if (e.data.size > 0) {
-                e.data.arrayBuffer().then((buf) => {
-                  contextManager.sendRecordingChunk(buf);
-                });
-              }
-            };
-            newRecorder.start(1000);
-            mediaRecorderRef.current = newRecorder;
-          };
-          mediaRecorderRef.current.stop();
-        }
+      rotationTimerRef.current = setInterval(() => {
+        void rotateOnce();
       }, chunkDurationMs);
 
       durationTimerRef.current = setInterval(() => {
@@ -109,9 +148,11 @@ export default function App() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to start recording");
     }
-  }, []);
+  }, [startRecorderForCurrentFile]);
 
   const stopCapture = useCallback(async () => {
+    stoppingRef.current = true;
+
     if (rotationTimerRef.current) {
       clearInterval(rotationTimerRef.current);
       rotationTimerRef.current = null;
@@ -122,21 +163,32 @@ export default function App() {
     }
     setDuration(0);
 
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
-      mediaRecorderRef.current.onstop = async () => {
-        await contextManager.stopRecording();
-        streamRef.current?.getTracks().forEach((t) => t.stop());
-        streamRef.current = null;
-        mediaRecorderRef.current = null;
-        setIsRecording(false);
-      };
-      mediaRecorderRef.current.stop();
-    } else {
+    const finalizeStop = async () => {
+      await flushPendingChunkSends();
       await contextManager.stopRecording();
       streamRef.current?.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
       mediaRecorderRef.current = null;
+      isRotatingRef.current = false;
+      stoppingRef.current = false;
       setIsRecording(false);
+    };
+
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      mediaRecorderRef.current.onstop = async () => {
+        try {
+          await finalizeStop();
+        } catch (err) {
+          setError(err instanceof Error ? err.message : "Failed to stop recording");
+        }
+      };
+      mediaRecorderRef.current.stop();
+    } else {
+      try {
+        await finalizeStop();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to stop recording");
+      }
     }
   }, []);
 

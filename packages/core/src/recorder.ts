@@ -28,7 +28,8 @@ export function getNextRecordingPath(): string {
   const d = String(now.getDate()).padStart(2, "0");
   const h = String(now.getHours()).padStart(2, "0");
   const min = String(now.getMinutes()).padStart(2, "0");
-  return path.join(TMP_DIR, `${y}-${m}-${d}_${h}-${min}${EXT}`);
+  const sec = String(now.getSeconds()).padStart(2, "0");
+  return path.join(TMP_DIR, `${y}-${m}-${d}_${h}-${min}-${sec}${EXT}`);
 }
 
 /** Chunk duration in ms for rotation */

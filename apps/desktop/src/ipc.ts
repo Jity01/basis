@@ -128,6 +128,19 @@ function openNewFile(): string {
   return filePath;
 }
 
+function coerceChunkToBuffer(input: unknown): Buffer | null {
+  if (Buffer.isBuffer(input)) {
+    return input;
+  }
+  if (input instanceof Uint8Array) {
+    return Buffer.from(input);
+  }
+  if (input instanceof ArrayBuffer) {
+    return Buffer.from(new Uint8Array(input));
+  }
+  return null;
+}
+
 export function setupIpc(): void {
   if (!stopIdleMonitor) {
     stopIdleMonitor = startIdleMonitor({
@@ -144,14 +157,15 @@ export function setupIpc(): void {
     return { success: true, filePath };
   });
 
-  ipcMain.on("recording-chunk", (_event, chunk: Buffer) => {
-    if (writeStream) {
-      writeStream.write(chunk);
+  ipcMain.on("recording-chunk", (_event, chunkPayload: unknown) => {
+    const chunk = coerceChunkToBuffer(chunkPayload);
+    if (!chunk || !writeStream) {
+      return;
     }
+    writeStream.write(chunk);
   });
 
   ipcMain.handle("rotate-recording", async () => {
-    closeCurrentFile();
     const filePath = openNewFile();
     emitProcessingStatus();
     return { filePath };
