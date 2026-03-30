@@ -5,15 +5,19 @@ import * as path from "path";
 /** Load repo-root `.env` when running from compiled `dist/` (packages/core/dist). */
 dotenv.config({ path: path.join(__dirname, "../../../.env") });
 
-const DEFAULT_MODEL = "gpt-4o-mini";
+const DEFAULT_MODEL =
+  process.env.FIREWORKS_MODEL?.trim() ||
+  "accounts/fireworks/models/qwen3-vl-30b-a3b-instruct";
+const FIREWORKS_CHAT_COMPLETIONS_URL =
+  "https://api.fireworks.ai/inference/v1/chat/completions";
 const MIN_SECONDS_BETWEEN_REQUESTS = 70;
 let lastRequestAtMs = 0;
 
 function getApiKey(): string {
-  const key = process.env.OPENAI_API_KEY?.trim();
+  const key = process.env.FIREWORKS_API_KEY?.trim();
   if (!key) {
     throw new Error(
-      "Missing OPENAI_API_KEY."
+      "Missing FIREWORKS_API_KEY."
     );
   }
   return key;
@@ -104,14 +108,14 @@ function mimeForPath(filePath: string): "image/jpeg" | "image/png" | "image/gif"
 }
 
 /**
- * Reads frame files as base64 and sends them to OpenAI Chat Completions (vision).
- * Requires `OPENAI_API_KEY` (see repo-root `.env.example`).
+ * Reads frame files as base64 and sends them to Fireworks Chat Completions (vision).
+ * Requires `FIREWORKS_API_KEY`.
  *
  * Environment:
- * - `OPENAI_API_KEY` — required
- * - `OPENAI_MODEL` — optional, default `gpt-4o-mini` (must be vision-capable)
+ * - `FIREWORKS_API_KEY` — required
+ * - `FIREWORKS_MODEL` — optional, defaults to qwen3-vl-30b-a3b-instruct
  */
-type OpenAIContentPart =
+type VisionContentPart =
   | { type: "text"; text: string }
   | { type: "image_url"; image_url: { url: string } };
 
@@ -129,9 +133,7 @@ export async function tagChunk(
     rollingContext
   );
 
-  const content: OpenAIContentPart[] = [
-    { type: "text", text: promptText },
-  ];
+  const content: VisionContentPart[] = [];
 
   for (const fp of framePaths) {
     const buf = await fs.readFile(fp);
@@ -144,11 +146,12 @@ export async function tagChunk(
       },
     });
   }
+  content.push({ type: "text", text: promptText });
 
   let responseContent = "";
   try {
     await waitForRateLimitWindow();
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    const response = await fetch(FIREWORKS_CHAT_COMPLETIONS_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -173,11 +176,11 @@ export async function tagChunk(
     responseContent = json.choices?.[0]?.message?.content?.trim() ?? "";
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
-    throw new Error(`OpenAI Chat Completions API failed: ${msg}`);
+    throw new Error(`Fireworks Chat Completions API failed: ${msg}`);
   }
 
   if (!responseContent) {
-    throw new Error("OpenAI returned no text content");
+    throw new Error("Fireworks returned no text content");
   }
 
   return responseContent;
