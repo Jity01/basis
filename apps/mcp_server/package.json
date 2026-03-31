@@ -1,0 +1,21 @@
+{
+  "name": "@context-manager/mcp-server",
+  "version": "0.0.1",
+  "private": true,
+  "main": "./dist/server.js",
+  "types": "./dist/server.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/server.js"
+  },
+  "dependencies": {
+    "@context-manager/config": "workspace:*",
+    "@context-manager/core": "workspace:*",
+    "dotenv": "^16.4.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.6.0"
+  }
+}

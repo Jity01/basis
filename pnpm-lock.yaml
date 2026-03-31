@@ -58,6 +58,25 @@ importers:
         specifier: ^8.0.1
         version: 8.0.5
 
+  apps/mcp_server:
+    dependencies:
+      '@context-manager/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      '@context-manager/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      dotenv:
+        specifier: ^16.4.7
+        version: 16.6.1
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.19.15
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+
   packages/config:
     devDependencies:
       '@types/node':

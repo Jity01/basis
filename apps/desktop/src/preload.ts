@@ -38,4 +38,74 @@ contextBridge.exposeInMainWorld("contextManager", {
   getChunkDurationMs: () => ipcRenderer.invoke("get-chunk-duration-ms"),
   getDesktopSources: (opts: { types: ("screen" | "window")[] }) =>
     ipcRenderer.invoke("get-desktop-sources", opts),
+  getApprovalState: () => ipcRenderer.invoke("get-approval-state"),
+  resolveApproval: (requestId: string, resolution: "approved" | "rejected") =>
+    ipcRenderer.invoke("resolve-approval", { requestId, resolution }),
+  approveAllRequests: () => ipcRenderer.invoke("approve-all-requests"),
+  updateApprovalSettings: (settings: { autoApproveAllRequests?: boolean; timeoutMs?: number }) =>
+    ipcRenderer.invoke("update-approval-settings", settings),
+  getRemoteAccessState: () => ipcRenderer.invoke("get-remote-access-state"),
+  setRemoteAccessEnabled: (enabled: boolean) => ipcRenderer.invoke("set-remote-access-enabled", enabled),
+  onRemoteAccessState: (
+    callback: (state: {
+      enabled: boolean;
+      status: "disabled" | "starting" | "connected" | "reconnecting" | "error";
+      publicUrl: string | null;
+      authToken: string | null;
+      error: string | null;
+    }) => void
+  ) => {
+    const listener = (_event: unknown, state: unknown) => {
+      callback(
+        state as {
+          enabled: boolean;
+          status: "disabled" | "starting" | "connected" | "reconnecting" | "error";
+          publicUrl: string | null;
+          authToken: string | null;
+          error: string | null;
+        }
+      );
+    };
+    ipcRenderer.on("remote-access-state", listener);
+    return () => {
+      ipcRenderer.removeListener("remote-access-state", listener);
+    };
+  },
+  onApprovalState: (
+    callback: (state: {
+      pending: Array<{
+        id: string;
+        createdAt: string;
+        query: string;
+        resultPreview: string;
+        fullResult: string;
+      }>;
+      settings: {
+        autoApproveAllRequests: boolean;
+        timeoutMs: number;
+      };
+    }) => void
+  ) => {
+    const listener = (_event: unknown, state: unknown) => {
+      callback(
+        state as {
+          pending: Array<{
+            id: string;
+            createdAt: string;
+            query: string;
+            resultPreview: string;
+            fullResult: string;
+          }>;
+          settings: {
+            autoApproveAllRequests: boolean;
+            timeoutMs: number;
+          };
+        }
+      );
+    };
+    ipcRenderer.on("approval-state", listener);
+    return () => {
+      ipcRenderer.removeListener("approval-state", listener);
+    };
+  },
 });

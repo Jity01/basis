@@ -3,3 +3,4 @@ export * from "./recorder";
 export * from "./frames";
 export * from "./tagger";
 export * from "./storage";
+export * from "./searcher";

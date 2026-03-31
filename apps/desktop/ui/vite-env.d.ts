@@ -26,6 +26,62 @@ interface ContextManagerAPI {
   getDesktopSources: (opts: { types: ("screen" | "window")[] }) => Promise<
     Array<{ id: string; name: string }>
   >;
+  getApprovalState: () => Promise<{
+    pending: Array<{
+      id: string;
+      createdAt: string;
+      query: string;
+      resultPreview: string;
+      fullResult: string;
+    }>;
+    settings: {
+      autoApproveAllRequests: boolean;
+      timeoutMs: number;
+    };
+  }>;
+  resolveApproval: (requestId: string, resolution: "approved" | "rejected") => Promise<{ ok: boolean }>;
+  approveAllRequests: () => Promise<{ ok: boolean; resolvedCount: number }>;
+  updateApprovalSettings: (settings: {
+    autoApproveAllRequests?: boolean;
+    timeoutMs?: number;
+  }) => Promise<{
+    autoApproveAllRequests: boolean;
+    timeoutMs: number;
+  }>;
+  getRemoteAccessState: () => Promise<{
+    enabled: boolean;
+    status: "disabled" | "starting" | "connected" | "reconnecting" | "error";
+    publicUrl: string | null;
+    authToken: string | null;
+    error: string | null;
+  }>;
+  setRemoteAccessEnabled: (enabled: boolean) => Promise<{
+    enabled: boolean;
+    status: "disabled" | "starting" | "connected" | "reconnecting" | "error";
+    publicUrl: string | null;
+    authToken: string | null;
+    error: string | null;
+  }>;
+  onRemoteAccessState: (callback: (state: {
+    enabled: boolean;
+    status: "disabled" | "starting" | "connected" | "reconnecting" | "error";
+    publicUrl: string | null;
+    authToken: string | null;
+    error: string | null;
+  }) => void) => () => void;
+  onApprovalState: (callback: (state: {
+    pending: Array<{
+      id: string;
+      createdAt: string;
+      query: string;
+      resultPreview: string;
+      fullResult: string;
+    }>;
+    settings: {
+      autoApproveAllRequests: boolean;
+      timeoutMs: number;
+    };
+  }) => void) => () => void;
 }
 
 declare global {
