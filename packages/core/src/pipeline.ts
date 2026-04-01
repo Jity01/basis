@@ -7,7 +7,7 @@ import {
   FRAMES_TO_KEEP,
 } from "@context-manager/config";
 import { extractFrames, selectRepresentativeFrames } from "./frames";
-import { deleteRawVideo, storeChunk, updateDailyIndex } from "./storage";
+import { deleteRawVideo, storeChunk } from "./storage";
 import { tagChunk } from "./tagger";
 
 const TMP_DIR = path.join(CONTEXT_ROOT, ".tmp");
@@ -40,15 +40,6 @@ function isSameLocalDay(a: Date, b: Date): boolean {
     a.getMonth() === b.getMonth() &&
     a.getDate() === b.getDate()
   );
-}
-
-function dayKeyFromDate(d: Date): string {
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-}
-
-function dateFromDayKey(dayKey: string): Date {
-  const [yyyy, mm, dd] = dayKey.split("-");
-  return new Date(Number(yyyy), Number(mm) - 1, Number(dd), 0, 0, 0, 0);
 }
 
 function hhmmss(d: Date): string {
@@ -126,12 +117,6 @@ async function getBacklogFiles(currentFile: string | null): Promise<BacklogItem[
   return backlog;
 }
 
-async function flushDailyIndexes(dayKeys: Set<string>): Promise<void> {
-  for (const dayKey of Array.from(dayKeys)) {
-    await updateDailyIndex(dateFromDayKey(dayKey));
-  }
-}
-
 /**
  * Process all unprocessed raw chunk files in `~/.context/.tmp/` (except current).
  * For each chunk: extract -> tag -> choose representative frames -> store -> delete raw file.
@@ -146,7 +131,6 @@ export async function processBacklog(
   const total = backlog.length;
   let rollingContext = "";
   let previousChunkStart: Date | null = null;
-  const processedDayKeys = new Set<string>();
   let completed = 0;
 
   options.onProgress?.({ phase: "start", total, completed });
@@ -195,7 +179,6 @@ export async function processBacklog(
     );
 
     await deleteRawVideo(item.filePath);
-    processedDayKeys.add(dayKeyFromDate(chunkStart));
     rollingContext = summary.trim();
     previousChunkStart = chunkStart;
     completed += 1;
@@ -207,12 +190,10 @@ export async function processBacklog(
     });
 
     if (!shouldContinue()) {
-      await flushDailyIndexes(processedDayKeys);
       options.onProgress?.({ phase: "paused", total, completed });
       return;
     }
   }
 
-  await flushDailyIndexes(processedDayKeys);
   options.onProgress?.({ phase: "done", total, completed });
 }

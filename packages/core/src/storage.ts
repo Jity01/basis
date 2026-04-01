@@ -3,10 +3,10 @@ import * as path from "path";
 import { CONTEXT_ROOT } from "@context-manager/config";
 
 const FRAMES_DIR_NAME = "frames";
-const SUMMARY_FILE_NAME = "summary.txt";
 const META_FILE_NAME = "meta.json";
 const DAILY_INDEX_FILE_NAME = "index.txt";
 const REQUIRED_REPRESENTATIVE_FRAMES = 5;
+const INDEX_SECTION_PATTERN = /\[(\d{2}:\d{2})\]\n([\s\S]*?)(?=\n\n\[\d{2}:\d{2}\]\n|$)/g;
 
 function pad2(n: number): string {
   return String(n).padStart(2, "0");
@@ -43,7 +43,7 @@ export async function storeChunk(
   const framesDir = path.join(chunkDir, FRAMES_DIR_NAME);
 
   await fs.mkdir(framesDir, { recursive: true });
-  await fs.writeFile(path.join(chunkDir, SUMMARY_FILE_NAME), summary, "utf8");
+  await upsertDailyIndex(timestamp, summary);
   await fs.writeFile(
     path.join(chunkDir, META_FILE_NAME),
     `${JSON.stringify(meta, null, 2)}\n`,
@@ -60,42 +60,39 @@ export async function storeChunk(
   return chunkDir;
 }
 
-/** Rebuild daily `index.txt` from all `summary.txt` files for the given date. */
-export async function updateDailyIndex(date: Date): Promise<void> {
-  const dayDir = dayDirFromDate(date);
+async function upsertDailyIndex(timestamp: Date, summary: string): Promise<void> {
+  const dayDir = dayDirFromDate(timestamp);
   await fs.mkdir(dayDir, { recursive: true });
 
-  const entries = await fs.readdir(dayDir, { withFileTypes: true });
-  const chunkDirs = entries
-    .filter((entry) => entry.isDirectory() && /^\d{2}-\d{2}$/.test(entry.name))
-    .map((entry) => entry.name)
-    .sort((a, b) => a.localeCompare(b));
+  const indexPath = path.join(dayDir, DAILY_INDEX_FILE_NAME);
+  const hh = pad2(timestamp.getHours());
+  const min = pad2(timestamp.getMinutes());
+  const key = `${hh}:${min}`;
 
-  const sections: string[] = [];
-  for (const dirName of chunkDirs) {
-    const summaryPath = path.join(dayDir, dirName, SUMMARY_FILE_NAME);
-    let summaryText: string;
-    try {
-      summaryText = (await fs.readFile(summaryPath, "utf8")).trim();
-    } catch (err: unknown) {
-      if ((err as NodeJS.ErrnoException)?.code === "ENOENT") {
-        console.warn(`Daily index: summary file not found: ${summaryPath}`);
-        continue;
-      }
+  const sections = new Map<string, string>();
+  try {
+    const existing = await fs.readFile(indexPath, "utf8");
+    let match: RegExpExecArray | null;
+    INDEX_SECTION_PATTERN.lastIndex = 0;
+    while ((match = INDEX_SECTION_PATTERN.exec(existing)) != null) {
+      sections.set(match[1], match[2].trim());
+    }
+  } catch (err: unknown) {
+    if ((err as NodeJS.ErrnoException)?.code !== "ENOENT") {
       throw err;
     }
-
-    if (!summaryText) {
-      continue;
-    }
-
-    const [hh, min] = dirName.split("-");
-    sections.push(`[${hh}:${min}]\n${summaryText}`);
   }
 
+  sections.set(key, summary.trim());
+
+  const sorted = Array.from(sections.entries()).sort((a, b) =>
+    a[0].localeCompare(b[0])
+  );
   const indexContents =
-    sections.length > 0 ? `${sections.join("\n\n")}\n` : "";
-  await fs.writeFile(path.join(dayDir, DAILY_INDEX_FILE_NAME), indexContents, "utf8");
+    sorted.length > 0
+      ? `${sorted.map(([k, v]) => `[${k}]\n${v}`).join("\n\n")}\n`
+      : "";
+  await fs.writeFile(indexPath, indexContents, "utf8");
 }
 
 /** Delete a raw recording file that lives under `~/.context/.tmp/`. */

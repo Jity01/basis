@@ -49,6 +49,34 @@ pnpm dev
 
 This opens an Electron window with the Context Manager placeholder UI. Imports from `@context-manager/core` and `@context-manager/config` work without errors (check the terminal for logs).
 
+## Claude Remote Connector
+
+You can expose the local MCP server to Claude through the desktop app's Cloudflare tunnel.
+
+1. Run `pnpm dev`.
+2. In the desktop app, open `Settings` and enable `Remote Access`.
+3. Copy the `Remote MCP Endpoint` value. Use the full `https://.../mcp` endpoint, not just the tunnel root URL.
+4. In Claude, add a custom remote MCP connector using that endpoint and complete the OAuth flow.
+
+Notes:
+
+- The server now exposes standard MCP OAuth endpoints through the SDK: `/.well-known/oauth-authorization-server`, `/.well-known/oauth-protected-resource/mcp`, `/authorize`, `/token`, and `/register`.
+- Dynamic Client Registration (DCR) is the default path for remote clients. If you manually configure a fixed client in Claude, you can still use `MCP_OAUTH_CLIENT_ID` and `MCP_OAUTH_CLIENT_SECRET` as an optional fallback.
+- The desktop app still shows a local-only debug token for localhost `curl` checks, but Claude should connect through OAuth.
+- Remote tool calls still use the app's approval queue. Keep the app open to approve requests, or enable auto-approve while testing.
+- Optional redirect allowlist: set `MCP_OAUTH_ALLOWED_REDIRECT_URIS` to a comma-separated list of exact callback URLs. By default, the server accepts Claude callback URLs and loopback redirect URLs for local testing tools.
+
+### Remote MCP Validation
+
+If a connector still fails, validate the server in this order:
+
+1. `curl https://<your-tunnel-host>/health`
+2. `curl https://<your-tunnel-host>/.well-known/oauth-authorization-server`
+3. `curl https://<your-tunnel-host>/.well-known/oauth-protected-resource/mcp`
+4. Confirm the desktop app or server logs show the auth route Claude hit (`/register`, `/authorize`, `/token`) and the MCP method it reached (`initialize`, `tools/list`, or `tools/call`)
+
+The MCP server now logs those auth and MCP steps directly, which makes it much easier to tell whether a failure is tunnel reachability, OAuth discovery, token exchange, or the authenticated MCP session itself.
+
 ## How to Run Tests
 
 **Milestone 1:** Run `pnpm dev` — Electron window opens with "Context Manager" placeholder.

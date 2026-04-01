@@ -24,6 +24,8 @@ type DayEntry = {
   summaries: SummaryEntry[];
 };
 
+const INDEX_SECTION_PATTERN = /\[(\d{2}):(\d{2})\]\n([\s\S]*?)(?=\n\n\[\d{2}:\d{2}\]\n|$)/g;
+
 function getFireworksApiKey(): string {
   const key = process.env.FIREWORKS_API_KEY?.trim();
   if (!key) {
@@ -125,9 +127,8 @@ function dayLabelFromIndexPath(indexPath: string): string {
 function parseSummariesFromIndex(indexPath: string, indexText: string): SummaryEntry[] {
   const dayDir = path.dirname(indexPath);
   const out: SummaryEntry[] = [];
-  const pattern = /\[(\d{2}):(\d{2})\]\n([\s\S]*?)(?=\n\n\[\d{2}:\d{2}\]\n|$)/g;
   let match: RegExpExecArray | null;
-  while ((match = pattern.exec(indexText)) != null) {
+  while ((match = INDEX_SECTION_PATTERN.exec(indexText)) != null) {
     const hh = match[1];
     const mm = match[2];
     const summaryText = (match[3] || "").trim();
@@ -137,6 +138,22 @@ function parseSummariesFromIndex(indexPath: string, indexText: string): SummaryE
     out.push({
       summaryPath: path.join(dayDir, `${hh}-${mm}`, SUMMARY_FILE_NAME),
     });
+  }
+  return out;
+}
+
+function buildSummaryTextByPath(indexPath: string, indexText: string): Map<string, string> {
+  const dayDir = path.dirname(indexPath);
+  const out = new Map<string, string>();
+  let match: RegExpExecArray | null;
+  while ((match = INDEX_SECTION_PATTERN.exec(indexText)) != null) {
+    const hh = match[1];
+    const mm = match[2];
+    const summaryText = (match[3] || "").trim();
+    if (!summaryText) {
+      continue;
+    }
+    out.set(path.join(dayDir, `${hh}-${mm}`, SUMMARY_FILE_NAME), summaryText);
   }
   return out;
 }
@@ -306,8 +323,8 @@ function mimeTypeForFile(filePath: string): string {
 }
 
 /**
- * For each selected day, include full index text.
- * For each selected summary path, include frame images as base64 data URLs.
+ * For each selected summary path, include matched summary text from index.txt
+ * and frame images as base64 data URLs.
  */
 export async function loadResults(paths: string[]): Promise<string> {
   if (paths.length === 0) {
@@ -344,8 +361,7 @@ export async function loadResults(paths: string[]): Promise<string> {
         throw err;
       }
     }
-
-    sections.push([`[DAY INDEX] ${dayLabelFromIndexPath(indexPath)} (${indexPath})`, indexText].join("\n"));
+    const summaryTextByPath = buildSummaryTextByPath(indexPath, indexText);
 
     for (const summaryPath of summaryPaths) {
       const chunkPath = path.dirname(summaryPath);
@@ -373,11 +389,13 @@ export async function loadResults(paths: string[]): Promise<string> {
       }
 
       const timestamp = formatTimestampFromChunkPath(chunkPath);
+      const summaryText = summaryTextByPath.get(summaryPath) || "(missing matching summary section in index.txt)";
       const framesBlock =
         frameLines.length > 0 ? frameLines.map((f) => `- ${f}`).join("\n") : "- (none)";
       sections.push(
         [
           `[SUMMARY] ${timestamp} (${summaryPath})`,
+          summaryText,
           "FramesBase64:",
           framesBlock,
         ].join("\n")
