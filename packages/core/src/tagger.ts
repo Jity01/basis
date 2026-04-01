@@ -1,6 +1,7 @@
 import * as dotenv from "dotenv";
 import * as fs from "fs/promises";
 import * as path from "path";
+import type { AISettings } from "./aiSettings";
 
 /** Load repo-root `.env` when running from compiled `dist/` (packages/core/dist). */
 dotenv.config({ path: path.join(__dirname, "../../../.env") });
@@ -8,8 +9,7 @@ dotenv.config({ path: path.join(__dirname, "../../../.env") });
 const DEFAULT_MODEL =
   process.env.FIREWORKS_MODEL?.trim() ||
   "accounts/fireworks/models/qwen3-vl-30b-a3b-instruct";
-const FIREWORKS_CHAT_COMPLETIONS_URL =
-  "https://api.fireworks.ai/inference/v1/chat/completions";
+const DEFAULT_FIREWORKS_BASE_URL = "https://api.fireworks.ai/inference/v1";
 const MIN_SECONDS_BETWEEN_REQUESTS = 70;
 let lastRequestAtMs = 0;
 
@@ -23,11 +23,18 @@ function getApiKey(): string {
   return key;
 }
 
+function getFireworksBaseUrl(): string {
+  return process.env.FIREWORKS_BASE_URL?.trim() || DEFAULT_FIREWORKS_BASE_URL;
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function waitForRateLimitWindow(): Promise<void> {
+async function waitForRateLimitWindow(settings?: AISettings): Promise<void> {
+  if (settings?.provider === "local") {
+    return;
+  }
   if (lastRequestAtMs <= 0) {
     return;
   }
@@ -119,11 +126,32 @@ type VisionContentPart =
   | { type: "text"; text: string }
   | { type: "image_url"; image_url: { url: string } };
 
+function getTaggingModel(settings?: AISettings): string {
+  return settings?.provider === "local" ? settings.localTaggingModel : DEFAULT_MODEL;
+}
+
+function getTaggingUrl(settings?: AISettings): string {
+  const baseUrl =
+    settings?.provider === "local" ? settings.localBaseUrl : getFireworksBaseUrl();
+  return `${baseUrl.replace(/\/$/, "")}/chat/completions`;
+}
+
+function getTaggingHeaders(settings?: AISettings): Record<string, string> {
+  if (settings?.provider === "local") {
+    return { "Content-Type": "application/json" };
+  }
+  return {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${getApiKey()}`,
+  };
+}
+
 export async function tagChunk(
   framePaths: string[],
   startTime: string,
   endTime: string,
-  rollingContext: string
+  rollingContext: string,
+  settings?: AISettings
 ): Promise<string> {
   const numFrames = framePaths.length;
   const promptText = buildAnalysisPrompt(
@@ -150,20 +178,19 @@ export async function tagChunk(
 
   let responseContent = "";
   try {
-    await waitForRateLimitWindow();
-    const response = await fetch(FIREWORKS_CHAT_COMPLETIONS_URL, {
+    await waitForRateLimitWindow(settings);
+    const response = await fetch(getTaggingUrl(settings), {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${getApiKey()}`,
-      },
+      headers: getTaggingHeaders(settings),
       body: JSON.stringify({
-        model: DEFAULT_MODEL,
+        model: getTaggingModel(settings),
         max_tokens: 4096,
         messages: [{ role: "user", content }],
       }),
     });
-    lastRequestAtMs = Date.now();
+    if (settings?.provider !== "local") {
+      lastRequestAtMs = Date.now();
+    }
 
     if (!response.ok) {
       const body = await response.text();
@@ -176,11 +203,13 @@ export async function tagChunk(
     responseContent = json.choices?.[0]?.message?.content?.trim() ?? "";
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
-    throw new Error(`Fireworks Chat Completions API failed: ${msg}`);
+    throw new Error(
+      `${settings?.provider === "local" ? "Local Ollama" : "Fireworks"} Chat Completions API failed: ${msg}`
+    );
   }
 
   if (!responseContent) {
-    throw new Error("Fireworks returned no text content");
+    throw new Error(`${settings?.provider === "local" ? "Local Ollama" : "Fireworks"} returned no text content`);
   }
 
   return responseContent;

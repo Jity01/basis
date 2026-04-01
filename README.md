@@ -1,6 +1,6 @@
 # Context Manager
 
-Personal, local-first screen recording tool that captures your screen, tags each segment with **Claude Sonnet** (Anthropic API, vision), and stores structured summaries + frames in a filesystem that AI agents can easily search.
+Personal, local-first screen recording tool that captures your screen, tags each segment with either **Fireworks** or a local **Ollama** model, and stores structured summaries + frames in a filesystem that AI agents can easily search.
 
 ## Project Structure
 
@@ -35,7 +35,10 @@ context-manager/
 - **Node.js** 18+
 - **pnpm** 9.x (`npm install -g pnpm`)
 - **ffmpeg** (includes `ffmpeg` and `ffprobe` on `PATH`) — used for frame extraction. For local development on macOS: `brew install ffmpeg`. The MVP assumes ffmpeg is installed; it is not bundled.
-- **Anthropic** — for tagging (vision). Create an API key at [console.anthropic.com](https://console.anthropic.com/settings/keys). Copy **`.env.example`** to **`.env`** in the repo root and set **`ANTHROPIC_API_KEY`**. Optional: **`ANTHROPIC_MODEL`** (defaults to **`claude-sonnet-4-20250514`**; must be a vision-capable Claude model).
+- **Fireworks** or **Ollama**
+- Fireworks mode uses `FIREWORKS_API_KEY` and the existing optional `FIREWORKS_BASE_URL` / `FIREWORKS_MODEL` env vars.
+- Local mode uses Ollama running on `http://127.0.0.1:11434` and the app stores a normalized OpenAI-compatible base URL such as `http://127.0.0.1:11434/v1`.
+- In the desktop app, open `Settings` and choose either `Fireworks` or `Local (Ollama)`.
 
 ## Quick Start
 
@@ -116,15 +119,15 @@ cd apps/desktop && electron .
 4. Confirm 15 JPEGs exist, order matches time order, and `ffprobe` reports `max(width,height) <= 1568` for each.
 5. Call `selectRepresentativeFrames(paths, 5)` and confirm 5 paths, including the first and last of the 15.
 
-## Milestone 4: Tagging with Claude (Anthropic) ✅
+## Milestone 4: Tagging With Fireworks Or Ollama ✅
 
 - **`packages/core/src/tagger.ts`**
-  - `tagChunk(framePaths, startTime, endTime, rollingContext)` — reads each frame file as base64, sends the analysis prompt plus **all** frames as separate image blocks to the **[Anthropic Messages API](https://docs.anthropic.com/en/api/messages)** (`@anthropic-ai/sdk`). Uses **`ANTHROPIC_API_KEY`** and optional **`ANTHROPIC_MODEL`** (default `claude-sonnet-4-20250514`).
+  - `tagChunk(framePaths, startTime, endTime, rollingContext)` — reads each frame file as base64, sends the analysis prompt plus **all** frames as separate image blocks to either Fireworks or a local Ollama model using a chat-completions style API.
   - Returns a **single paragraph** summary string (non-empty `rollingContext` is appended to the prompt as prior segment context).
 
 **Manual test (Milestone 4):**
 
-1. Copy **`.env.example`** → **`.env`** and set **`ANTHROPIC_API_KEY`** (see Requirements).
+1. For Fireworks mode, set **`FIREWORKS_API_KEY`** in **`.env`**. For local mode, make sure Ollama is running and pick a vision-capable local tagging model in the desktop app settings.
 2. Build core: `pnpm --filter @context-manager/core build`
 3. Run `pnpm --filter @context-manager/core tag-test -- /path/to/recording.webm` or call `extractFrames` then `tagChunk` from code.
 4. Verify: non-empty summary text that references real on-screen content.
