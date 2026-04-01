@@ -9,6 +9,7 @@ import {
 import { extractFrames, selectRepresentativeFrames } from "./frames";
 import { deleteRawVideo, storeChunk } from "./storage";
 import { tagChunk } from "./tagger";
+import type { AISettings } from "./aiSettings";
 
 const TMP_DIR = path.join(CONTEXT_ROOT, ".tmp");
 const MAX_ROLLING_CONTEXT_GAP_MS = 30 * 60 * 1000;
@@ -28,6 +29,7 @@ export type ProcessBacklogProgress =
 
 export type ProcessBacklogOptions = {
   onProgress?: (progress: ProcessBacklogProgress) => void;
+  aiSettings?: AISettings;
 };
 
 function pad2(n: number): string {
@@ -159,7 +161,8 @@ export async function processBacklog(
       allFrames,
       hhmmss(chunkStart),
       hhmmss(chunkEnd),
-      rollingContext
+      rollingContext,
+      options.aiSettings
     );
     const representativeFrames = selectRepresentativeFrames(allFrames, FRAMES_TO_KEEP);
 

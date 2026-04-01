@@ -1,6 +1,7 @@
 import * as dotenv from "dotenv";
 import * as fs from "fs/promises";
 import * as path from "path";
+import type { AISettings } from "./aiSettings";
 
 dotenv.config({ path: path.join(__dirname, "../../../.env") });
 
@@ -42,15 +43,32 @@ function getFireworksModel(): string {
   return process.env.FIREWORKS_MODEL?.trim() || DEFAULT_FIREWORKS_MODEL;
 }
 
-async function callFireworks(prompt: string): Promise<string> {
-  const response = await fetch(`${getFireworksBaseUrl().replace(/\/$/, "")}/chat/completions`, {
+function getSearchModel(settings?: AISettings): string {
+  return settings?.provider === "local" ? settings.localSearchModel : getFireworksModel();
+}
+
+function getSearchUrl(settings?: AISettings): string {
+  const baseUrl =
+    settings?.provider === "local" ? settings.localBaseUrl : getFireworksBaseUrl();
+  return `${baseUrl.replace(/\/$/, "")}/chat/completions`;
+}
+
+function getSearchHeaders(settings?: AISettings): Record<string, string> {
+  if (settings?.provider === "local") {
+    return { "Content-Type": "application/json" };
+  }
+  return {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${getFireworksApiKey()}`,
+  };
+}
+
+async function callSearchModel(prompt: string, settings?: AISettings): Promise<string> {
+  const response = await fetch(getSearchUrl(settings), {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${getFireworksApiKey()}`,
-    },
+    headers: getSearchHeaders(settings),
     body: JSON.stringify({
-      model: getFireworksModel(),
+      model: getSearchModel(settings),
       temperature: 0.0,
       max_tokens: 1000,
       messages: [{ role: "user", content: prompt }],
@@ -59,7 +77,9 @@ async function callFireworks(prompt: string): Promise<string> {
 
   if (!response.ok) {
     const body = await response.text();
-    throw new Error(`Fireworks request failed (${response.status}): ${body}`);
+    throw new Error(
+      `${settings?.provider === "local" ? "Local Ollama" : "Fireworks"} request failed (${response.status}): ${body}`
+    );
   }
 
   const json = (await response.json()) as {
@@ -67,7 +87,7 @@ async function callFireworks(prompt: string): Promise<string> {
   };
   const text = json.choices?.[0]?.message?.content?.trim();
   if (!text) {
-    throw new Error("Fireworks returned empty content.");
+    throw new Error(`${settings?.provider === "local" ? "Local Ollama" : "Fireworks"} returned empty content.`);
   }
   return text;
 }
@@ -216,9 +236,9 @@ function parsePaths(raw: string, validPaths: Set<string>): string[] {
   return out;
 }
 
-async function runBatchSearch(query: string, batch: DayEntry[]): Promise<string[]> {
+async function runBatchSearch(query: string, batch: DayEntry[], settings?: AISettings): Promise<string[]> {
   const prompt = buildBatchPrompt(query, batch);
-  const raw = await callFireworks(prompt);
+  const raw = await callSearchModel(prompt, settings);
   const validPaths = new Set(batch.flatMap((day) => day.summaries.map((s) => s.summaryPath)));
   return parsePaths(raw, validPaths);
 }
@@ -228,7 +248,8 @@ async function runBatchSearch(query: string, batch: DayEntry[]): Promise<string[
  */
 export async function findRelevantPaths(
   query: string,
-  contextRoot: string
+  contextRoot: string,
+  settings?: AISettings
 ): Promise<string[]> {
   const indexPaths = await discoverIndexFiles(contextRoot);
   if (indexPaths.length === 0) {
@@ -256,7 +277,7 @@ export async function findRelevantPaths(
   }
 
   const dayBatches = buildBatches(nonEmptyDays, DEFAULT_BATCH_SIZE);
-  const batchJobs = dayBatches.map((batch) => runBatchSearch(query, batch));
+  const batchJobs = dayBatches.map((batch) => runBatchSearch(query, batch, settings));
 
   if (batchJobs.length === 0) {
     return [];
@@ -284,7 +305,8 @@ export async function findRelevantPaths(
   }
 
   if (failedBatches > 0) {
-    console.warn(`[searcher] ${failedBatches}/${settled.length} Fireworks batch calls failed.`);
+    const providerLabel = settings?.provider === "local" ? "local" : "Fireworks";
+    console.warn(`[searcher] ${failedBatches}/${settled.length} ${providerLabel} batch calls failed.`);
   }
 
   return Array.from(scores.entries())
