@@ -12,7 +12,11 @@
   "dependencies": {
     "@context-manager/config": "workspace:*",
     "@context-manager/core": "workspace:*",
-    "dotenv": "^16.4.7"
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@types/express": "^5.0.6",
+    "dotenv": "^16.4.7",
+    "express": "^5.2.1",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
