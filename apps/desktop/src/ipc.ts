@@ -12,6 +12,9 @@ import {
   CHUNK_DURATION_MS,
   processBacklog,
   type ProcessBacklogProgress,
+  readAISettings,
+  writeAISettings,
+  type AISettings,
 } from "@context-manager/core";
 import { startIdleMonitor } from "./idle";
 
@@ -57,7 +60,9 @@ type RemoteAccessState = {
   error: string | null;
 };
 
-type ProcessingTrigger = "idle" | "manual" | null;
+type AISettingsUpdate = Partial<AISettings>;
+
+type ProcessingTrigger = "idle" | "manual" | "live" | null;
 type ProcessingStatus = {
   isProcessing: boolean;
   currentChunk: number;
@@ -143,10 +148,12 @@ async function runBacklog(trigger: ProcessingTrigger, shouldContinue: () => bool
   emitProcessingStatus();
 
   try {
+    const aiSettings = readAISettings();
     await processBacklog(getCurrentFile, shouldContinue, {
       onProgress: (progress) => {
         updateProgress(progress);
       },
+      aiSettings,
     });
   } finally {
     processingState.isProcessing = false;
@@ -157,6 +164,18 @@ async function runBacklog(trigger: ProcessingTrigger, shouldContinue: () => bool
   }
 
   return true;
+}
+
+function maybeStartLiveProcessing(): void {
+  const aiSettings = readAISettings();
+  if (aiSettings.provider !== "fireworks" || processingState.isProcessing || countPendingChunks() === 0) {
+    return;
+  }
+
+  void runBacklog("live", () => true).catch((err: unknown) => {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[processing] live backlog failed: ${message}`);
+  });
 }
 
 function closeCurrentFile(): void {
@@ -506,12 +525,14 @@ export function setupIpc(): void {
 
   ipcMain.handle("rotate-recording", async () => {
     const filePath = openNewFile();
+    maybeStartLiveProcessing();
     emitProcessingStatus();
     return { filePath };
   });
 
   ipcMain.handle("stop-recording", async () => {
     closeCurrentFile();
+    maybeStartLiveProcessing();
     return { success: true };
   });
 
@@ -566,6 +587,14 @@ export function setupIpc(): void {
   ipcMain.handle("get-remote-access-state", async () => {
     await refreshRemoteAuthToken();
     return getRemoteAccessState();
+  });
+
+  ipcMain.handle("get-ai-settings", () => {
+    return readAISettings();
+  });
+
+  ipcMain.handle("update-ai-settings", (_event, payload: AISettingsUpdate) => {
+    return writeAISettings(payload || {});
   });
 
   ipcMain.handle("set-remote-access-enabled", async (_event, enabled: boolean) => {

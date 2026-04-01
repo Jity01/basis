@@ -16,7 +16,7 @@ contextBridge.exposeInMainWorld("contextManager", {
       currentChunk: number;
       totalChunks: number;
       pendingChunks: number;
-      trigger: "idle" | "manual" | null;
+      trigger: "idle" | "manual" | "live" | null;
     }) => void
   ) => {
     const listener = (_event: unknown, status: unknown) => {
@@ -26,7 +26,7 @@ contextBridge.exposeInMainWorld("contextManager", {
           currentChunk: number;
           totalChunks: number;
           pendingChunks: number;
-          trigger: "idle" | "manual" | null;
+          trigger: "idle" | "manual" | "live" | null;
         }
       );
     };
@@ -45,6 +45,13 @@ contextBridge.exposeInMainWorld("contextManager", {
   updateApprovalSettings: (settings: { autoApproveAllRequests?: boolean; timeoutMs?: number }) =>
     ipcRenderer.invoke("update-approval-settings", settings),
   getRemoteAccessState: () => ipcRenderer.invoke("get-remote-access-state"),
+  getAISettings: () => ipcRenderer.invoke("get-ai-settings"),
+  updateAISettings: (settings: {
+    provider?: "fireworks" | "local";
+    localBaseUrl?: string;
+    localTaggingModel?: string;
+    localSearchModel?: string;
+  }) => ipcRenderer.invoke("update-ai-settings", settings),
   setRemoteAccessEnabled: (enabled: boolean) => ipcRenderer.invoke("set-remote-access-enabled", enabled),
   onRemoteAccessState: (
     callback: (state: {

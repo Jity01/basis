@@ -7,7 +7,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { mcpAuthRouter, getOAuthProtectedResourceMetadataUrl } from "@modelcontextprotocol/sdk/server/auth/router.js";
 import { requireBearerAuth } from "@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js";
 import { CONTEXT_ROOT } from "@context-manager/config";
-import { findRelevantPaths, loadResults } from "@context-manager/core";
+import { findRelevantPaths, loadResults, readAISettings } from "@context-manager/core";
 import { z } from "zod";
 import {
   getApprovalSettings,
@@ -57,7 +57,7 @@ function createMcpServer(): McpServer {
     "search_context",
     {
       description:
-        "Searches local context chunks via Fireworks relevance ranking and returns matched summary text with frames.",
+        "Searches local context chunks via the configured AI provider and returns matched summary text with frames.",
       inputSchema: {
         query: z.string().describe("Natural language query to match against indexed chunk summaries."),
         contextRoot: z
@@ -89,7 +89,7 @@ async function runSearchContext(args: unknown): Promise<{
     throw new Error("search_context requires a non-empty query.");
   }
 
-  const relevantPaths = await findRelevantPaths(query, contextRoot);
+  const relevantPaths = await findRelevantPaths(query, contextRoot, readAISettings());
   const formatted = await loadResults(relevantPaths);
   const approval = await requestApproval(query, formatted || "(no matching summaries found)");
 

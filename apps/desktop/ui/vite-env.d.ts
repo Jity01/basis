@@ -13,14 +13,14 @@ interface ContextManagerAPI {
     currentChunk: number;
     totalChunks: number;
     pendingChunks: number;
-    trigger: "idle" | "manual" | null;
+    trigger: "idle" | "manual" | "live" | null;
   }>;
   onProcessingStatus: (callback: (status: {
     isProcessing: boolean;
     currentChunk: number;
     totalChunks: number;
     pendingChunks: number;
-    trigger: "idle" | "manual" | null;
+    trigger: "idle" | "manual" | "live" | null;
   }) => void) => () => void;
   getChunkDurationMs: () => Promise<number>;
   getDesktopSources: (opts: { types: ("screen" | "window")[] }) => Promise<
@@ -47,6 +47,23 @@ interface ContextManagerAPI {
   }) => Promise<{
     autoApproveAllRequests: boolean;
     timeoutMs: number;
+  }>;
+  getAISettings: () => Promise<{
+    provider: "fireworks" | "local";
+    localBaseUrl: string;
+    localTaggingModel: string;
+    localSearchModel: string;
+  }>;
+  updateAISettings: (settings: {
+    provider?: "fireworks" | "local";
+    localBaseUrl?: string;
+    localTaggingModel?: string;
+    localSearchModel?: string;
+  }) => Promise<{
+    provider: "fireworks" | "local";
+    localBaseUrl: string;
+    localTaggingModel: string;
+    localSearchModel: string;
   }>;
   getRemoteAccessState: () => Promise<{
     enabled: boolean;

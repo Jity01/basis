@@ -7,7 +7,7 @@ type ProcessingStatus = {
   currentChunk: number;
   totalChunks: number;
   pendingChunks: number;
-  trigger: "idle" | "manual" | null;
+  trigger: "idle" | "manual" | "live" | null;
 };
 
 type RemoteAccessState = {
@@ -31,11 +31,25 @@ type ApprovalSettings = {
   timeoutMs: number;
 };
 
+type AISettings = {
+  provider: "fireworks" | "local";
+  localBaseUrl: string;
+  localTaggingModel: string;
+  localSearchModel: string;
+};
+
 type TabId = "controls" | "requests" | "settings";
 
 const fallbackSettings: ApprovalSettings = {
   autoApproveAllRequests: false,
   timeoutMs: 120_000,
+};
+
+const fallbackAISettings: AISettings = {
+  provider: "fireworks",
+  localBaseUrl: "http://127.0.0.1:11434/v1",
+  localTaggingModel: "llava:7b",
+  localSearchModel: "qwen3:4b",
 };
 
 export default function App() {
@@ -60,6 +74,7 @@ export default function App() {
   const [isTogglingRemoteAccess, setIsTogglingRemoteAccess] = useState(false);
   const [pendingApprovals, setPendingApprovals] = useState<ApprovalRequest[]>([]);
   const [approvalSettings, setApprovalSettings] = useState<ApprovalSettings>(fallbackSettings);
+  const [aiSettings, setAISettings] = useState<AISettings>(fallbackAISettings);
   const [settingsTimeoutSeconds, setSettingsTimeoutSeconds] = useState(120);
   const [expandedRequestIds, setExpandedRequestIds] = useState<Record<string, boolean>>({});
   const [approvalNotice, setApprovalNotice] = useState<string | null>(null);
@@ -325,6 +340,17 @@ export default function App() {
     }
   }, [approvalSettings.autoApproveAllRequests, settingsTimeoutSeconds]);
 
+  const saveAISettings = useCallback(async () => {
+    try {
+      setError(null);
+      const updated = await contextManager.updateAISettings(aiSettings);
+      setAISettings(updated);
+      setApprovalNotice("AI settings saved.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save AI settings");
+    }
+  }, [aiSettings]);
+
   const formatDuration = (seconds: number) => {
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
@@ -373,6 +399,9 @@ export default function App() {
     void contextManager.getRemoteAccessState().then((state) => {
       setRemoteAccessState(state);
     });
+    void contextManager.getAISettings().then((settings) => {
+      setAISettings(settings);
+    });
 
     const unsubscribeProcessing = contextManager.onProcessingStatus((status) => {
       setProcessingStatus(status);
@@ -405,255 +434,358 @@ export default function App() {
   }, [approvalSettings.timeoutMs]);
 
   const pendingCount = pendingApprovals.length;
+  const isLocalProvider = aiSettings.provider === "local";
+  const statusToneClass = processingStatus.isProcessing
+    ? "tone-processing"
+    : isRecording
+      ? "tone-live"
+      : processingStatus.pendingChunks > 0
+        ? "tone-pending"
+        : "tone-ready";
+  const remoteStatusToneClass =
+    remoteAccessState.status === "connected"
+      ? "tone-ready"
+      : remoteAccessState.status === "error"
+        ? "tone-warning"
+        : remoteAccessState.status === "starting" || remoteAccessState.status === "reconnecting"
+          ? "tone-processing"
+          : "tone-muted";
 
   return (
-    <div style={{ padding: 24, fontFamily: "system-ui, sans-serif" }}>
-      <h1>Context Manager</h1>
-      <p>Personal, local-first screen recording and tagging.</p>
-
-      <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
-        <button onClick={() => setActiveTab("controls")} disabled={activeTab === "controls"}>
-          Controls
-        </button>
-        <button onClick={() => setActiveTab("requests")} disabled={activeTab === "requests"}>
-          Requests{pendingCount > 0 ? ` (${pendingCount})` : ""}
-        </button>
-        <button onClick={() => setActiveTab("settings")} disabled={activeTab === "settings"}>
-          Settings
-        </button>
-      </div>
-
-      {error && <p style={{ color: "#c00", marginBottom: 16 }}>{error}</p>}
-      {approvalNotice && <p style={{ color: "#056", marginBottom: 16 }}>{approvalNotice}</p>}
-
-      {activeTab === "controls" && (
-        <>
-          <div style={{ marginTop: 24 }}>
-            <button
-              onClick={isRecording ? stopCapture : startCapture}
-              style={{
-                padding: "12px 24px",
-                fontSize: 16,
-                backgroundColor: isRecording ? "#c00" : "#07c",
-                color: "#fff",
-                border: "none",
-                borderRadius: 8,
-                cursor: "pointer",
-              }}
-            >
-              {isRecording ? "Stop Recording" : "Start Recording"}
-            </button>
-            <button
-              onClick={processNow}
-              disabled={processingStatus.pendingChunks === 0 || processingStatus.isProcessing}
-              style={{
-                marginLeft: 12,
-                padding: "12px 24px",
-                fontSize: 16,
-                backgroundColor:
-                  processingStatus.pendingChunks === 0 || processingStatus.isProcessing
-                    ? "#999"
-                    : "#0a7",
-                color: "#fff",
-                border: "none",
-                borderRadius: 8,
-                cursor:
-                  processingStatus.pendingChunks === 0 || processingStatus.isProcessing
-                    ? "not-allowed"
-                    : "pointer",
-              }}
-            >
-              {processingStatus.isProcessing
-                ? `Processing chunk ${processingCurrent}/${processingTotal}...`
-                : "Process Now"}
-            </button>
-
-            {isRecording && (
-              <span style={{ marginLeft: 16, fontSize: 18, fontWeight: 500 }}>
-                {formatDuration(duration)}
-              </span>
-            )}
+    <div className="app-shell">
+      <div className="app-frame">
+        <header className="hero">
+          <p className="hero-eyebrow">Open Source · Private · Context Aware</p>
+          <h1 className="hero-title">
+            Context, <span>always in the loop.</span>
+          </h1>
+          <p className="hero-copy">
+            Personal, local-first screen recording and tagging with a calmer interface for reviewing
+            what your assistant can access.
+          </p>
+          <div className="hero-meta">
+            <span className={`status-pill ${statusToneClass}`}>{statusLine}</span>
+            <span className={`status-pill ${remoteStatusToneClass}`}>Remote access: {remoteStatusLine}</span>
           </div>
-          <p style={{ marginTop: 16, color: "#555" }}>{statusLine}</p>
-        </>
-      )}
+        </header>
 
-      {activeTab === "requests" && (
-        <div style={{ marginTop: 24 }}>
-          <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 12 }}>
-            <strong>Pending Requests: {pendingCount}</strong>
-            <button onClick={() => void refreshApprovalState()}>Refresh</button>
-            <button onClick={() => void approveAll()} disabled={pendingCount === 0}>
-              Approve All
-            </button>
-          </div>
-
-          {pendingCount === 0 && <p style={{ color: "#555" }}>No pending requests.</p>}
-
-          {pendingApprovals.map((request) => {
-            const isExpanded = expandedRequestIds[request.id] === true;
-            return (
-              <div
-                key={request.id}
-                style={{
-                  border: "1px solid #ddd",
-                  borderRadius: 8,
-                  padding: 12,
-                  marginBottom: 12,
-                }}
-              >
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-                  <div>
-                    <div style={{ fontWeight: 600 }}>{request.query}</div>
-                    <div style={{ color: "#666", fontSize: 13 }}>
-                      {new Date(request.createdAt).toLocaleString()}
-                    </div>
-                  </div>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <button onClick={() => void resolveRequest(request.id, "approved")}>Approve</button>
-                    <button onClick={() => void resolveRequest(request.id, "rejected")}>Reject</button>
-                  </div>
-                </div>
-                <pre
-                  style={{
-                    whiteSpace: "pre-wrap",
-                    marginTop: 8,
-                    background: "#f8f8f8",
-                    padding: 8,
-                    borderRadius: 6,
-                    maxHeight: isExpanded ? 320 : 120,
-                    overflow: "auto",
-                  }}
-                >
-                  {isExpanded ? request.fullResult : request.resultPreview}
-                </pre>
-                <button
-                  onClick={() =>
-                    setExpandedRequestIds((current) => ({ ...current, [request.id]: !isExpanded }))
-                  }
-                >
-                  {isExpanded ? "Collapse" : "Expand"}
-                </button>
-              </div>
-            );
-          })}
+        <div className="tab-list" role="tablist" aria-label="Context manager sections">
+          <button
+            className={`tab-button ${activeTab === "controls" ? "is-active" : ""}`}
+            onClick={() => setActiveTab("controls")}
+            type="button"
+          >
+            Controls
+          </button>
+          <button
+            className={`tab-button ${activeTab === "requests" ? "is-active" : ""}`}
+            onClick={() => setActiveTab("requests")}
+            type="button"
+          >
+            Requests{pendingCount > 0 ? ` (${pendingCount})` : ""}
+          </button>
+          <button
+            className={`tab-button ${activeTab === "settings" ? "is-active" : ""}`}
+            onClick={() => setActiveTab("settings")}
+            type="button"
+          >
+            Settings
+          </button>
         </div>
-      )}
 
-      {activeTab === "settings" && (
-        <div style={{ marginTop: 24, maxWidth: 480 }}>
-          <h3 style={{ marginBottom: 12 }}>Remote Access</h3>
-          <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-            <input
-              type="checkbox"
-              checked={remoteAccessState.enabled}
-              disabled={isTogglingRemoteAccess}
-              onChange={(event) => {
-                void setRemoteAccessEnabled(event.target.checked);
-              }}
-            />
-            Enable remote access
-          </label>
-          <p style={{ color: "#555", marginTop: 0, marginBottom: 8 }}>
-            Status: {remoteStatusLine}
-          </p>
-          <p style={{ color: "#555", marginTop: 0, marginBottom: 8, fontSize: 13, lineHeight: 1.5 }}>
-            Remote tool calls still respect the approval queue below. Keep the app open to approve
-            requests, or enable auto-approve while testing.
-          </p>
-          {remoteAccessState.error && (
-            <p style={{ color: "#a60", marginTop: 0, marginBottom: 8 }}>{remoteAccessState.error}</p>
-          )}
-          {remoteAccessState.enabled && (
-            <div
-              style={{
-                border: "1px solid #ddd",
-                borderRadius: 8,
-                padding: 12,
-                marginBottom: 20,
-                background: "#fafafa",
-              }}
-            >
-              <div style={{ marginBottom: 10 }}>
-                <div style={{ fontSize: 12, color: "#666" }}>Public Tunnel URL</div>
-                <div style={{ wordBreak: "break-all", marginTop: 4 }}>
-                  {remoteAccessState.publicUrl || "(waiting for tunnel URL...)"}
-                </div>
-                <button
-                  style={{ marginTop: 6 }}
-                  disabled={!remoteAccessState.publicUrl}
-                  onClick={() => void copyToClipboard(remoteAccessState.publicUrl)}
-                >
-                  Copy URL
-                </button>
-              </div>
-              <div style={{ marginBottom: 10 }}>
-                <div style={{ fontSize: 12, color: "#666" }}>Remote MCP Endpoint</div>
-                <div style={{ wordBreak: "break-all", marginTop: 4 }}>
-                  {remoteMcpEndpoint || "(waiting for MCP endpoint...)"}
-                </div>
-                <button
-                  style={{ marginTop: 6 }}
-                  disabled={!remoteMcpEndpoint}
-                  onClick={() => void copyToClipboard(remoteMcpEndpoint)}
-                >
-                  Copy MCP Endpoint
-                </button>
-              </div>
-              <div>
-                <div style={{ fontSize: 12, color: "#666" }}>Local-Only Debug Token</div>
-                <div style={{ wordBreak: "break-all", marginTop: 4 }}>
-                  {remoteAccessState.authToken || "(waiting for MCP auth token...)"}
-                </div>
-                <button
-                  style={{ marginTop: 6 }}
-                  disabled={!remoteAccessState.authToken}
-                  onClick={() => void copyToClipboard(remoteAccessState.authToken)}
-                >
-                  Copy Token
-                </button>
-              </div>
-              <p style={{ color: "#555", marginTop: 12, marginBottom: 0, fontSize: 13, lineHeight: 1.5 }}>
-                Use the <code>/mcp</code> endpoint above for Claude or any remote MCP client. The
-                server now advertises standard OAuth discovery, authorization, token, and dynamic
-                client registration endpoints automatically. The debug token is only for localhost
-                manual checks and is not part of the normal Claude setup.
-              </p>
+        {error && <p className="banner banner-error">{error}</p>}
+        {approvalNotice && <p className="banner banner-info">{approvalNotice}</p>}
+
+        {activeTab === "controls" && (
+          <section className="panel">
+            <div className="section-heading">
+              <p className="section-kicker">Capture</p>
+              <h2 className="section-title">Capture your desktop context</h2>
             </div>
-          )}
 
-          <h3 style={{ marginBottom: 12 }}>Approval Settings</h3>
-          <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
-            <input
-              type="checkbox"
-              checked={approvalSettings.autoApproveAllRequests}
-              onChange={(event) =>
-                setApprovalSettings((current) => ({
-                  ...current,
-                  autoApproveAllRequests: event.target.checked,
-                }))
-              }
-            />
-            Auto-approve all requests
-          </label>
+            <div className="control-row">
+              <button
+                className={`button button-primary ${isRecording ? "button-danger" : ""}`}
+                onClick={isRecording ? stopCapture : startCapture}
+                type="button"
+              >
+                {isRecording ? "Stop Recording" : "Start Recording"}
+              </button>
+              <button
+                className="button button-secondary"
+                onClick={processNow}
+                disabled={processingStatus.pendingChunks === 0 || processingStatus.isProcessing}
+                type="button"
+              >
+                {processingStatus.isProcessing
+                  ? `Processing chunk ${processingCurrent}/${processingTotal}...`
+                  : "Process Now"}
+              </button>
 
-          <label style={{ display: "block", marginBottom: 8 }}>Approval timeout (seconds)</label>
-          <input
-            type="number"
-            min={5}
-            value={settingsTimeoutSeconds}
-            onChange={(event) => {
-              const next = Number(event.target.value);
-              setSettingsTimeoutSeconds(Number.isFinite(next) ? next : 120);
-            }}
-            style={{ marginBottom: 16, width: 160 }}
-          />
+              {isRecording && <span className="duration-pill">{formatDuration(duration)}</span>}
+            </div>
 
-          <div>
-            <button onClick={() => void saveSettings()}>Save Settings</button>
-          </div>
-        </div>
-      )}
+            <p className="support-copy">
+              Capture runs quietly in the background, rotating files automatically so your backlog
+              stays searchable and easy to process.
+            </p>
+          </section>
+        )}
+
+        {activeTab === "requests" && (
+          <section className="panel">
+            <div className="section-heading section-heading-row">
+              <div>
+                <p className="section-kicker">Approvals</p>
+                <h2 className="section-title">Pending requests</h2>
+              </div>
+              <div className="button-row">
+                <button className="button button-ghost" onClick={() => void refreshApprovalState()} type="button">
+                  Refresh
+                </button>
+                <button
+                  className="button button-secondary"
+                  onClick={() => void approveAll()}
+                  disabled={pendingCount === 0}
+                  type="button"
+                >
+                  Approve All
+                </button>
+              </div>
+            </div>
+
+            <p className="support-copy">Pending Requests: {pendingCount}</p>
+
+            {pendingCount === 0 && <p className="empty-state">No pending requests.</p>}
+
+            <div className="request-list">
+              {pendingApprovals.map((request) => {
+                const isExpanded = expandedRequestIds[request.id] === true;
+                return (
+                  <article key={request.id} className="request-card">
+                    <div className="request-header">
+                      <div className="request-meta">
+                        <div className="request-title">{request.query}</div>
+                        <div className="request-date">
+                          {new Date(request.createdAt).toLocaleString()}
+                        </div>
+                      </div>
+                      <div className="button-row">
+                        <button
+                          className="button button-secondary"
+                          onClick={() => void resolveRequest(request.id, "approved")}
+                          type="button"
+                        >
+                          Approve
+                        </button>
+                        <button
+                          className="button button-ghost"
+                          onClick={() => void resolveRequest(request.id, "rejected")}
+                          type="button"
+                        >
+                          Reject
+                        </button>
+                      </div>
+                    </div>
+                    <pre className={`request-preview ${isExpanded ? "is-expanded" : ""}`}>
+                      {isExpanded ? request.fullResult : request.resultPreview}
+                    </pre>
+                    <button
+                      className="button button-text"
+                      onClick={() =>
+                        setExpandedRequestIds((current) => ({ ...current, [request.id]: !isExpanded }))
+                      }
+                      type="button"
+                    >
+                      {isExpanded ? "Collapse" : "Expand"}
+                    </button>
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
+        {activeTab === "settings" && (
+          <section className="panel panel-form">
+            <div className="settings-stack">
+              <div className="section-heading">
+                <p className="section-kicker">Configuration</p>
+                <h2 className="section-title">AI settings</h2>
+              </div>
+
+              <label className="field-label" htmlFor="provider">
+                Provider
+              </label>
+              <select
+                id="provider"
+                className="field-input"
+                value={aiSettings.provider}
+                onChange={(event) =>
+                  setAISettings((current) => ({
+                    ...current,
+                    provider: event.target.value === "local" ? "local" : "fireworks",
+                  }))
+                }
+              >
+                <option value="fireworks">Fireworks</option>
+                <option value="local">Local (Ollama)</option>
+              </select>
+              {!isLocalProvider && (
+                <p className="support-copy">
+                  Fireworks mode keeps using your existing <code>FIREWORKS_*</code> environment
+                  variables.
+                </p>
+              )}
+              {isLocalProvider && (
+                <>
+                  <label className="field-label" htmlFor="ollama-base-url">
+                    Ollama base URL
+                  </label>
+                  <input
+                    id="ollama-base-url"
+                    className="field-input"
+                    type="text"
+                    value={aiSettings.localBaseUrl}
+                    onChange={(event) =>
+                      setAISettings((current) => ({
+                        ...current,
+                        localBaseUrl: event.target.value,
+                      }))
+                    }
+                  />
+                  <label className="field-label" htmlFor="ollama-tagging-model">
+                    Local tagging model
+                  </label>
+                  <input
+                    id="ollama-tagging-model"
+                    className="field-input"
+                    type="text"
+                    value={aiSettings.localTaggingModel}
+                    onChange={(event) =>
+                      setAISettings((current) => ({
+                        ...current,
+                        localTaggingModel: event.target.value,
+                      }))
+                    }
+                  />
+                  <label className="field-label" htmlFor="ollama-search-model">
+                    Local search model
+                  </label>
+                  <input
+                    id="ollama-search-model"
+                    className="field-input"
+                    type="text"
+                    value={aiSettings.localSearchModel}
+                    onChange={(event) =>
+                      setAISettings((current) => ({
+                        ...current,
+                        localSearchModel: event.target.value,
+                      }))
+                    }
+                  />
+                  <p className="support-copy">
+                    Use Ollama&apos;s OpenAI-compatible endpoint. If you enter{" "}
+                    <code>http://127.0.0.1:11434</code>, the app will automatically normalize it to{" "}
+                    <code>/v1</code>.
+                  </p>
+                </>
+              )}
+              <div>
+                <button className="button button-primary" onClick={() => void saveAISettings()} type="button">
+                  Save AI Settings
+                </button>
+              </div>
+
+              <div className="section-heading">
+                <p className="section-kicker">Connection</p>
+                <h2 className="section-title">Remote access</h2>
+              </div>
+
+              <label className="checkbox-row">
+                <input
+                  type="checkbox"
+                  checked={remoteAccessState.enabled}
+                  disabled={isTogglingRemoteAccess}
+                  onChange={(event) => {
+                    void setRemoteAccessEnabled(event.target.checked);
+                  }}
+                />
+                <span>Enable remote access</span>
+              </label>
+              <p className={`support-copy ${remoteStatusToneClass}`}>Status: {remoteStatusLine}</p>
+              <p className="support-copy">
+                Remote tool calls still respect the approval queue below. Keep the app open to
+                approve requests, or enable auto-approve while testing.
+              </p>
+              {remoteAccessState.error && <p className="banner banner-warning">{remoteAccessState.error}</p>}
+              {remoteAccessState.enabled && (
+                <div className="info-card">
+                  <div className="info-block">
+                    <div className="info-label">Remote MCP Endpoint</div>
+                    <div className="info-value">
+                      {remoteMcpEndpoint || "(waiting for MCP endpoint...)"}
+                    </div>
+                    <button
+                      className="button button-ghost"
+                      disabled={!remoteMcpEndpoint}
+                      onClick={() => void copyToClipboard(remoteMcpEndpoint)}
+                      type="button"
+                    >
+                      Copy MCP Endpoint
+                    </button>
+                  </div>
+                  <p className="support-copy">
+                    Use the endpoint above for Claude or any remote MCP client. The server
+                    advertises standard OAuth discovery, authorization, token, and dynamic client
+                    registration endpoints automatically.
+                  </p>
+                </div>
+              )}
+
+              <div className="section-heading">
+                <p className="section-kicker">Guardrails</p>
+                <h2 className="section-title">Approval settings</h2>
+              </div>
+
+              <label className="checkbox-row">
+                <input
+                  type="checkbox"
+                  checked={approvalSettings.autoApproveAllRequests}
+                  onChange={(event) =>
+                    setApprovalSettings((current) => ({
+                      ...current,
+                      autoApproveAllRequests: event.target.checked,
+                    }))
+                  }
+                />
+                <span>Auto-approve all requests</span>
+              </label>
+
+              <label className="field-label" htmlFor="approval-timeout">
+                Approval timeout (seconds)
+              </label>
+              <input
+                id="approval-timeout"
+                className="field-input field-input-small"
+                type="number"
+                min={5}
+                value={settingsTimeoutSeconds}
+                onChange={(event) => {
+                  const next = Number(event.target.value);
+                  setSettingsTimeoutSeconds(Number.isFinite(next) ? next : 120);
+                }}
+              />
+
+              <div>
+                <button className="button button-primary" onClick={() => void saveSettings()} type="button">
+                  Save Settings
+                </button>
+              </div>
+            </div>
+          </section>
+        )}
+      </div>
     </div>
   );
 }
