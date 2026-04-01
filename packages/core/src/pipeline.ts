@@ -1,12 +1,12 @@
 import * as fs from "fs/promises";
 import * as path from "path";
 import {
-  CHUNK_DURATION_MS,
   CONTEXT_ROOT,
   FRAMES_PER_CHUNK,
   FRAMES_TO_KEEP,
 } from "@context-manager/config";
 import { extractFrames, selectRepresentativeFrames } from "./frames";
+import { readChunkDurationMsForFile } from "./recorder";
 import { deleteRawVideo, storeChunk } from "./storage";
 import { tagChunk } from "./tagger";
 import type { AISettings } from "./aiSettings";
@@ -18,6 +18,7 @@ type BacklogItem = {
   filePath: string;
   mtimeMs: number;
   chunkStart: Date;
+  chunkDurationMs: number;
 };
 
 export type ProcessBacklogProgress =
@@ -112,6 +113,7 @@ async function getBacklogFiles(currentFile: string | null): Promise<BacklogItem[
       filePath,
       mtimeMs: stat.mtimeMs,
       chunkStart: chunkStartFromNameOrMtime(filePath, stat.mtimeMs),
+      chunkDurationMs: readChunkDurationMsForFile(filePath),
     });
   }
 
@@ -146,7 +148,7 @@ export async function processBacklog(
     });
 
     const chunkStart = item.chunkStart;
-    const chunkEnd = new Date(chunkStart.getTime() + CHUNK_DURATION_MS);
+    const chunkEnd = new Date(chunkStart.getTime() + item.chunkDurationMs);
 
     const shouldResetContext =
       previousChunkStart === null ||
@@ -174,6 +176,7 @@ export async function processBacklog(
         raw_video_path: item.filePath,
         chunk_start_iso: chunkStart.toISOString(),
         chunk_end_iso: chunkEnd.toISOString(),
+        chunk_duration_ms: item.chunkDurationMs,
         processed_at_iso: new Date().toISOString(),
         frames_extracted: allFrames.length,
         frames_stored: representativeFrames.length,

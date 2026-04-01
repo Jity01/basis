@@ -4,6 +4,7 @@ import { CONTEXT_ROOT, CHUNK_DURATION_MS } from "@context-manager/config";
 
 const TMP_DIR = path.join(CONTEXT_ROOT, ".tmp");
 const EXT = ".webm"; // MediaRecorder outputs webm
+const CHUNK_META_SUFFIX = ".meta.json";
 
 let currentFilePath: string | null = null;
 
@@ -34,6 +35,37 @@ export function getNextRecordingPath(): string {
 
 /** Chunk duration in ms for rotation */
 export { CHUNK_DURATION_MS };
+
+function chunkMetaPath(videoPath: string): string {
+  return `${videoPath}${CHUNK_META_SUFFIX}`;
+}
+
+function normalizeChunkDurationMs(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return CHUNK_DURATION_MS;
+  }
+  return Math.max(60_000, Math.round(value));
+}
+
+/** Persist the duration used for a specific raw chunk file. */
+export function writeChunkDurationMsForFile(videoPath: string, chunkDurationMs: number): void {
+  fs.writeFileSync(
+    chunkMetaPath(videoPath),
+    `${JSON.stringify({ chunkDurationMs: normalizeChunkDurationMs(chunkDurationMs) }, null, 2)}\n`,
+    "utf8"
+  );
+}
+
+/** Read the recorded duration for a raw chunk file, falling back to the default. */
+export function readChunkDurationMsForFile(videoPath: string): number {
+  try {
+    const raw = fs.readFileSync(chunkMetaPath(videoPath), "utf8");
+    const parsed = JSON.parse(raw) as { chunkDurationMs?: number };
+    return normalizeChunkDurationMs(parsed.chunkDurationMs);
+  } catch {
+    return CHUNK_DURATION_MS;
+  }
+}
 
 /** Get current recording file path, or null if not recording */
 export function getCurrentFile(): string | null {

@@ -23,6 +23,14 @@ interface ContextManagerAPI {
     trigger: "idle" | "manual" | "live" | null;
   }) => void) => () => void;
   getChunkDurationMs: () => Promise<number>;
+  getChunkSettings: () => Promise<{
+    chunkDurationMinutes: number;
+  }>;
+  updateChunkSettings: (settings: {
+    chunkDurationMinutes?: number;
+  }) => Promise<{
+    chunkDurationMinutes: number;
+  }>;
   getDesktopSources: (opts: { types: ("screen" | "window")[] }) => Promise<
     Array<{ id: string; name: string }>
   >;

@@ -36,6 +36,9 @@ contextBridge.exposeInMainWorld("contextManager", {
     };
   },
   getChunkDurationMs: () => ipcRenderer.invoke("get-chunk-duration-ms"),
+  getChunkSettings: () => ipcRenderer.invoke("get-chunk-settings"),
+  updateChunkSettings: (settings: { chunkDurationMinutes?: number }) =>
+    ipcRenderer.invoke("update-chunk-settings", settings),
   getDesktopSources: (opts: { types: ("screen" | "window")[] }) =>
     ipcRenderer.invoke("get-desktop-sources", opts),
   getApprovalState: () => ipcRenderer.invoke("get-approval-state"),

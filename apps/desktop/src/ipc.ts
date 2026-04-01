@@ -9,12 +9,16 @@ import {
   getUnprocessedFiles,
   getCurrentFile,
   setCurrentFile,
-  CHUNK_DURATION_MS,
+  getChunkDurationMs,
   processBacklog,
   type ProcessBacklogProgress,
   readAISettings,
   writeAISettings,
   type AISettings,
+  readChunkSettings,
+  writeChunkSettings,
+  writeChunkDurationMsForFile,
+  type ChunkSettings,
 } from "@context-manager/core";
 import { startIdleMonitor } from "./idle";
 
@@ -61,6 +65,7 @@ type RemoteAccessState = {
 };
 
 type AISettingsUpdate = Partial<AISettings>;
+type ChunkSettingsUpdate = Partial<ChunkSettings>;
 
 type ProcessingTrigger = "idle" | "manual" | "live" | null;
 type ProcessingStatus = {
@@ -86,6 +91,7 @@ let remoteAccessAuthToken: string | null = null;
 let remoteAccessError: string | null = null;
 let cloudflaredProcess: ChildProcess | null = null;
 let cloudflaredRestartTimer: ReturnType<typeof setTimeout> | null = null;
+let activeRecordingChunkDurationMs: number | null = null;
 
 export function setMainWindow(win: BrowserWindow): void {
   mainWindow = win;
@@ -187,10 +193,11 @@ function closeCurrentFile(): void {
   emitProcessingStatus();
 }
 
-function openNewFile(): string {
+function openNewFile(chunkDurationMs: number): string {
   closeCurrentFile();
   ensureTmpDir();
   const filePath = getNextRecordingPath();
+  writeChunkDurationMsForFile(filePath, chunkDurationMs);
   writeStream = fs.createWriteStream(filePath);
   setCurrentFile(filePath);
   emitProcessingStatus();
@@ -511,7 +518,9 @@ export function setupIpc(): void {
   }
 
   ipcMain.handle("start-recording", async () => {
-    const filePath = openNewFile();
+    const chunkDurationMs = getChunkDurationMs();
+    activeRecordingChunkDurationMs = chunkDurationMs;
+    const filePath = openNewFile(chunkDurationMs);
     return { success: true, filePath };
   });
 
@@ -524,13 +533,14 @@ export function setupIpc(): void {
   });
 
   ipcMain.handle("rotate-recording", async () => {
-    const filePath = openNewFile();
+    const filePath = openNewFile(activeRecordingChunkDurationMs ?? getChunkDurationMs());
     maybeStartLiveProcessing();
     emitProcessingStatus();
     return { filePath };
   });
 
   ipcMain.handle("stop-recording", async () => {
+    activeRecordingChunkDurationMs = null;
     closeCurrentFile();
     maybeStartLiveProcessing();
     return { success: true };
@@ -555,7 +565,15 @@ export function setupIpc(): void {
   });
 
   ipcMain.handle("get-chunk-duration-ms", () => {
-    return CHUNK_DURATION_MS;
+    return getChunkDurationMs();
+  });
+
+  ipcMain.handle("get-chunk-settings", () => {
+    return readChunkSettings();
+  });
+
+  ipcMain.handle("update-chunk-settings", (_event, payload: ChunkSettingsUpdate) => {
+    return writeChunkSettings(payload || {});
   });
 
   ipcMain.handle(

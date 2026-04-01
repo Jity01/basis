@@ -99,6 +99,7 @@ async function upsertDailyIndex(timestamp: Date, summary: string): Promise<void>
 export async function deleteRawVideo(videoPath: string): Promise<void> {
   const tmpDir = path.resolve(path.join(CONTEXT_ROOT, ".tmp"));
   const resolvedVideoPath = path.resolve(videoPath);
+  const resolvedMetaPath = path.resolve(`${videoPath}.meta.json`);
 
   if (
     resolvedVideoPath !== tmpDir &&
@@ -111,6 +112,16 @@ export async function deleteRawVideo(videoPath: string): Promise<void> {
 
   try {
     await fs.unlink(resolvedVideoPath);
+  } catch (err: unknown) {
+    if ((err as NodeJS.ErrnoException)?.code === "ENOENT") {
+      // Continue so we still clean up stale sidecar metadata.
+    } else {
+      throw err;
+    }
+  }
+
+  try {
+    await fs.unlink(resolvedMetaPath);
   } catch (err: unknown) {
     if ((err as NodeJS.ErrnoException)?.code === "ENOENT") {
       return;

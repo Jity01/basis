@@ -76,6 +76,7 @@ export default function App() {
   const [approvalSettings, setApprovalSettings] = useState<ApprovalSettings>(fallbackSettings);
   const [aiSettings, setAISettings] = useState<AISettings>(fallbackAISettings);
   const [settingsTimeoutSeconds, setSettingsTimeoutSeconds] = useState(120);
+  const [chunkDurationMinutes, setChunkDurationMinutes] = useState(5);
   const [expandedRequestIds, setExpandedRequestIds] = useState<Record<string, boolean>>({});
   const [approvalNotice, setApprovalNotice] = useState<string | null>(null);
 
@@ -351,6 +352,19 @@ export default function App() {
     }
   }, [aiSettings]);
 
+  const saveChunkSettings = useCallback(async () => {
+    try {
+      setError(null);
+      const updated = await contextManager.updateChunkSettings({
+        chunkDurationMinutes: Math.max(1, Math.round(chunkDurationMinutes)),
+      });
+      setChunkDurationMinutes(updated.chunkDurationMinutes);
+      setApprovalNotice("Capture settings saved.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save capture settings");
+    }
+  }, [chunkDurationMinutes]);
+
   const formatDuration = (seconds: number) => {
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
@@ -398,6 +412,9 @@ export default function App() {
     void refreshApprovalState();
     void contextManager.getRemoteAccessState().then((state) => {
       setRemoteAccessState(state);
+    });
+    void contextManager.getChunkSettings().then((settings) => {
+      setChunkDurationMinutes(settings.chunkDurationMinutes);
     });
     void contextManager.getAISettings().then((settings) => {
       setAISettings(settings);
@@ -453,22 +470,27 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <div className="app-frame">
-        <header className="hero">
-          <p className="hero-eyebrow">Open Source · Private · Context Aware</p>
-          <h1 className="hero-title">
-            Context, <span>always in the loop.</span>
-          </h1>
-          <p className="hero-copy">
-            Personal, local-first screen recording and tagging with a calmer interface for reviewing
-            what your assistant can access.
-          </p>
-          <div className="hero-meta">
-            <span className={`status-pill ${statusToneClass}`}>{statusLine}</span>
-            <span className={`status-pill ${remoteStatusToneClass}`}>Remote access: {remoteStatusLine}</span>
-          </div>
-        </header>
+      <div className="hero-wrap">
+        <div className="app-frame">
+          <header className="hero">
+            <p className="hero-eyebrow">Open Source &middot; Private &middot; Context Aware</p>
+            <h1 className="hero-title">
+              Your AI,<br />
+              always <span>in the loop.</span>
+            </h1>
+            <p className="hero-copy">
+              Records your screen, tags what you do, and exposes that context to your favorite
+              models.
+            </p>
+            <div className="hero-meta">
+              <span className={`status-pill ${statusToneClass}`}>{statusLine}</span>
+              <span className={`status-pill ${remoteStatusToneClass}`}>Remote: {remoteStatusLine}</span>
+            </div>
+          </header>
+        </div>
+      </div>
 
+      <div className="app-frame content-area">
         <div className="tab-list" role="tablist" aria-label="Context manager sections">
           <button
             className={`tab-button ${activeTab === "controls" ? "is-active" : ""}`}
@@ -609,6 +631,36 @@ export default function App() {
         {activeTab === "settings" && (
           <section className="panel panel-form">
             <div className="settings-stack">
+              <div className="section-heading">
+                <p className="section-kicker">Capture</p>
+                <h2 className="section-title">Capture settings</h2>
+              </div>
+
+              <label className="field-label" htmlFor="chunk-duration-minutes">
+                Chunk duration (minutes)
+              </label>
+              <input
+                id="chunk-duration-minutes"
+                className="field-input field-input-small"
+                type="number"
+                min={1}
+                step={1}
+                value={chunkDurationMinutes}
+                onChange={(event) => {
+                  const next = Number(event.target.value);
+                  setChunkDurationMinutes(Number.isFinite(next) ? next : 5);
+                }}
+              />
+              <p className="support-copy">
+                New recordings rotate every {chunkDurationMinutes || 5} minute
+                {Math.abs(chunkDurationMinutes || 5) === 1 ? "" : "s"}. Default is 5 minutes.
+              </p>
+              <div>
+                <button className="button button-primary" onClick={() => void saveChunkSettings()} type="button">
+                  Save Capture Settings
+                </button>
+              </div>
+
               <div className="section-heading">
                 <p className="section-kicker">Configuration</p>
                 <h2 className="section-title">AI settings</h2>

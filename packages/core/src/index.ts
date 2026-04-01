@@ -5,3 +5,4 @@ export * from "./tagger";
 export * from "./storage";
 export * from "./searcher";
 export * from "./aiSettings";
+export * from "./chunkSettings";
