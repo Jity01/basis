@@ -361,6 +361,7 @@ export default function App() {
         return "Disabled";
     }
   })();
+  const remoteMcpEndpoint = remoteAccessState.publicUrl ? `${remoteAccessState.publicUrl}/mcp` : null;
 
   useEffect(() => {
     if (!contextManager) {
@@ -556,6 +557,10 @@ export default function App() {
           <p style={{ color: "#555", marginTop: 0, marginBottom: 8 }}>
             Status: {remoteStatusLine}
           </p>
+          <p style={{ color: "#555", marginTop: 0, marginBottom: 8, fontSize: 13, lineHeight: 1.5 }}>
+            Remote tool calls still respect the approval queue below. Keep the app open to approve
+            requests, or enable auto-approve while testing.
+          </p>
           {remoteAccessState.error && (
             <p style={{ color: "#a60", marginTop: 0, marginBottom: 8 }}>{remoteAccessState.error}</p>
           )}
@@ -570,7 +575,7 @@ export default function App() {
               }}
             >
               <div style={{ marginBottom: 10 }}>
-                <div style={{ fontSize: 12, color: "#666" }}>Public URL</div>
+                <div style={{ fontSize: 12, color: "#666" }}>Public Tunnel URL</div>
                 <div style={{ wordBreak: "break-all", marginTop: 4 }}>
                   {remoteAccessState.publicUrl || "(waiting for tunnel URL...)"}
                 </div>
@@ -582,8 +587,21 @@ export default function App() {
                   Copy URL
                 </button>
               </div>
+              <div style={{ marginBottom: 10 }}>
+                <div style={{ fontSize: 12, color: "#666" }}>Remote MCP Endpoint</div>
+                <div style={{ wordBreak: "break-all", marginTop: 4 }}>
+                  {remoteMcpEndpoint || "(waiting for MCP endpoint...)"}
+                </div>
+                <button
+                  style={{ marginTop: 6 }}
+                  disabled={!remoteMcpEndpoint}
+                  onClick={() => void copyToClipboard(remoteMcpEndpoint)}
+                >
+                  Copy MCP Endpoint
+                </button>
+              </div>
               <div>
-                <div style={{ fontSize: 12, color: "#666" }}>Auth Token</div>
+                <div style={{ fontSize: 12, color: "#666" }}>Local-Only Debug Token</div>
                 <div style={{ wordBreak: "break-all", marginTop: 4 }}>
                   {remoteAccessState.authToken || "(waiting for MCP auth token...)"}
                 </div>
@@ -595,6 +613,12 @@ export default function App() {
                   Copy Token
                 </button>
               </div>
+              <p style={{ color: "#555", marginTop: 12, marginBottom: 0, fontSize: 13, lineHeight: 1.5 }}>
+                Use the <code>/mcp</code> endpoint above for Claude or any remote MCP client. The
+                server now advertises standard OAuth discovery, authorization, token, and dynamic
+                client registration endpoints automatically. The debug token is only for localhost
+                manual checks and is not part of the normal Claude setup.
+              </p>
             </div>
           )}
 
