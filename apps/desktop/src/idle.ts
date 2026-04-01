@@ -36,7 +36,6 @@ export function startIdleMonitor(options: IdleMonitorOptions): () => void {
     tickInFlight = true;
     try {
       const idleSeconds = getSystemIdleSeconds();
-      console.log("idleSeconds", idleSeconds);
       if (idleSeconds <= IDLE_START_THRESHOLD_SECONDS) {
         return;
       }
