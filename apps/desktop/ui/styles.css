@@ -565,6 +565,32 @@ code {
   gap: 12px;
 }
 
+.approval-time-edit-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+}
+
+.approval-time-field-label {
+  margin: 0;
+  min-width: 3.5rem;
+}
+
+.approval-time-input {
+  width: auto;
+  max-width: 100%;
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: rgba(255, 248, 241, 0.04);
+  color: var(--headline);
+  font-weight: 600;
+}
+
+.approval-time-body-textarea {
+  min-height: 140px;
+}
+
 .approval-time-pill {
   width: fit-content;
   background: rgba(255, 248, 241, 0.04);

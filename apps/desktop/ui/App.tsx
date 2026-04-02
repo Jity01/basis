@@ -102,6 +102,24 @@ function parseIndexSections(indexText: string): Array<{ time: string; summaryTex
   return sections;
 }
 
+function normalizeClockTime(timeText: string): string {
+  const [hRaw = "0", mRaw = "0"] = timeText.trim().split(":");
+  const hour = Math.min(23, Math.max(0, Number.parseInt(hRaw, 10) || 0));
+  const minute = Math.min(59, Math.max(0, Number.parseInt(mRaw, 10) || 0));
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+function serializeIndexSections(sections: Array<{ time: string; summaryText: string }>): string {
+  return sections
+    .map((section) => {
+      const t = normalizeClockTime(section.time);
+      const body = section.summaryText.replace(/\r\n/g, "\n").trimEnd();
+      return `[${t}]\n${body}`;
+    })
+    .join("\n\n")
+    .trimEnd();
+}
+
 function frameDataUrl(frame: ApprovalFrame): string {
   return `data:${frame.mimeType};base64,${frame.data}`;
 }
@@ -625,6 +643,19 @@ export default function App() {
 
   const renderDayIndexApproval = (request: ApprovalRequest, payload: DayIndexApprovalPayload) => {
     const sections = parseIndexSections(payload.indexText);
+    const updateDayIndexSection = (
+      sectionIndex: number,
+      patch: Partial<{ time: string; summaryText: string }>
+    ) => {
+      const next = parseIndexSections(payload.indexText).map((section, i) =>
+        i === sectionIndex ? { ...section, ...patch } : section
+      );
+      updateApprovalDraft(request.id, {
+        ...payload,
+        indexText: serializeIndexSections(next),
+      });
+    };
+
     return (
       <div className="approval-stack">
         <div className="approval-chip-row">
@@ -645,31 +676,56 @@ export default function App() {
         </div>
         <div className="approval-time-section-list">
           {sections.length === 0 ? (
-            <p className="empty-state">No timestamp sections detected in this index.</p>
+            <>
+              <p className="empty-state">No timestamp sections detected in this index.</p>
+              <div className="approval-editor-block">
+                <label className="field-label" htmlFor={`approval-index-${request.id}`}>
+                  Outgoing index text
+                </label>
+                <textarea
+                  id={`approval-index-${request.id}`}
+                  className="field-input approval-textarea"
+                  value={payload.indexText}
+                  onChange={(event) =>
+                    updateApprovalDraft(request.id, {
+                      ...payload,
+                      indexText: event.target.value,
+                    })
+                  }
+                />
+              </div>
+            </>
           ) : (
             sections.map((section, index) => (
               <article key={`${request.id}-${section.time}-${index}`} className="approval-time-card">
-                <div className="approval-time-pill">{formatFriendlyTime(section.time)}</div>
-                <p className="approval-time-text">{section.summaryText}</p>
+                <div className="approval-time-edit-row">
+                  <label className="field-label approval-time-field-label" htmlFor={`approval-time-${request.id}-${index}`}>
+                    Time
+                  </label>
+                  <input
+                    id={`approval-time-${request.id}-${index}`}
+                    type="time"
+                    className="field-input approval-time-input"
+                    value={normalizeClockTime(section.time)}
+                    onChange={(event) =>
+                      updateDayIndexSection(index, { time: event.target.value })
+                    }
+                  />
+                </div>
+                <label className="field-label" htmlFor={`approval-summary-${request.id}-${index}`}>
+                  Summary
+                </label>
+                <textarea
+                  id={`approval-summary-${request.id}-${index}`}
+                  className="field-input approval-textarea approval-time-body-textarea"
+                  value={section.summaryText}
+                  onChange={(event) =>
+                    updateDayIndexSection(index, { summaryText: event.target.value })
+                  }
+                />
               </article>
             ))
           )}
-        </div>
-        <div className="approval-editor-block">
-          <label className="field-label" htmlFor={`approval-index-${request.id}`}>
-            Outgoing index text
-          </label>
-          <textarea
-            id={`approval-index-${request.id}`}
-            className="field-input approval-textarea"
-            value={payload.indexText}
-            onChange={(event) =>
-              updateApprovalDraft(request.id, {
-                ...payload,
-                indexText: event.target.value,
-              })
-            }
-          />
         </div>
       </div>
     );
