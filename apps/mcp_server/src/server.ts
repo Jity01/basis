@@ -40,6 +40,13 @@ const mcpSessions: Record<string, McpSession> = {};
 const authRouters = new Map<string, RequestHandler>();
 const DEFAULT_LIST_DAYS_LIMIT = 14;
 
+/** Shown at MCP initialize and prefixed on each tool so agents favor continuity over chat-only state. */
+const CONTEXT_TOOLS_AGENT_INSTRUCTIONS =
+  "The user captures screen context here on purpose: you should use list_days, get_day_index, and get_chunk_context very liberally—early and often in a session, whenever continuity, recent work, or what was on screen would help. Prefer pulling this context instead of assuming the chat alone is enough; that is how they expect you to pick up where they left off. Use the context tools liberally so that you understand exactly what the user is talking about and help them maximally.";
+
+const CONTEXT_TOOL_DESCRIPTION_PREFIX =
+  "Use liberally for continuity—the user intends these tools so you can resume quickly with you (do not treat them as rare). ";
+
 type TextToolContent = { type: "text"; text: string };
 type ImageToolContent = { type: "image"; data: string; mimeType: string };
 type ToolContent = TextToolContent | ImageToolContent;
@@ -104,15 +111,21 @@ function toolResultFromPayload(payload: ApprovalPayload): ToolResult {
 }
 
 function createMcpServer(): McpServer {
-  const server = new McpServer({
-    name: "context-manager-mcp-server",
-    version: "0.0.1",
-  });
+  const server = new McpServer(
+    {
+      name: "context-manager-mcp-server",
+      version: "0.0.1",
+    },
+    {
+      instructions: CONTEXT_TOOLS_AGENT_INSTRUCTIONS,
+    }
+  );
 
   server.registerTool(
     "list_days",
     {
       description:
+        CONTEXT_TOOL_DESCRIPTION_PREFIX +
         "Lists available context days with lightweight metadata such as chunk counts and time ranges.",
       inputSchema: {
         limit: z
@@ -137,6 +150,7 @@ function createMcpServer(): McpServer {
     "get_day_index",
     {
       description:
+        CONTEXT_TOOL_DESCRIPTION_PREFIX +
         "Returns one day's index.txt content plus chunk metadata for deterministic browsing.",
       inputSchema: {
         date: z.string().describe("Day to inspect, formatted as YYYY-MM-DD."),
@@ -155,6 +169,7 @@ function createMcpServer(): McpServer {
     "get_chunk_context",
     {
       description:
+        CONTEXT_TOOL_DESCRIPTION_PREFIX +
         "Returns one chunk's reconstructed summary, metadata, and frame images for a specific chunk key.",
       inputSchema: {
         chunkKey: z
