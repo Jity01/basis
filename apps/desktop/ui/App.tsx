@@ -1,6 +1,16 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import type {
+  ApprovalFrame,
+  ApprovalPayload,
+  ApprovalRequest,
+  ApprovalSettings,
+  ChunkContextApprovalPayload,
+  DayIndexApprovalPayload,
+  DayListApprovalPayload,
+} from "../src/approvalTypes";
 
 const contextManager = window.contextManager;
+const INDEX_SECTION_PATTERN = /\[(\d{2}):(\d{2})\]\n([\s\S]*?)(?=\n\n\[\d{2}:\d{2}\]\n|$)/g;
 
 type ProcessingStatus = {
   isProcessing: boolean;
@@ -18,19 +28,6 @@ type RemoteAccessState = {
   publicUrl: string | null;
   authToken: string | null;
   error: string | null;
-};
-
-type ApprovalRequest = {
-  id: string;
-  createdAt: string;
-  query: string;
-  resultPreview: string;
-  fullResult: string;
-};
-
-type ApprovalSettings = {
-  autoApproveAllRequests: boolean;
-  timeoutMs: number;
 };
 
 type AISettings = {
@@ -53,6 +50,72 @@ const fallbackAISettings: AISettings = {
   localTaggingModel: "llava:7b",
   localSearchModel: "qwen3:4b",
 };
+
+function formatFriendlyDate(dateText: string): string {
+  const date = new Date(`${dateText}T00:00:00`);
+  if (Number.isNaN(date.getTime())) {
+    return dateText;
+  }
+  return date.toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function formatFriendlyTime(timeText: string): string {
+  const [hourText = "00", minuteText = "00"] = timeText.split(":");
+  const date = new Date(2000, 0, 1, Number(hourText), Number(minuteText));
+  if (Number.isNaN(date.getTime())) {
+    return timeText;
+  }
+  return date.toLocaleTimeString(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function formatCreatedAt(createdAt: string): string {
+  const date = new Date(createdAt);
+  if (Number.isNaN(date.getTime())) {
+    return createdAt;
+  }
+  return date.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function parseIndexSections(indexText: string): Array<{ time: string; summaryText: string }> {
+  const sections: Array<{ time: string; summaryText: string }> = [];
+  INDEX_SECTION_PATTERN.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = INDEX_SECTION_PATTERN.exec(indexText)) !== null) {
+    sections.push({
+      time: `${match[1]}:${match[2]}`,
+      summaryText: (match[3] || "").trim(),
+    });
+  }
+  return sections;
+}
+
+function frameDataUrl(frame: ApprovalFrame): string {
+  return `data:${frame.mimeType};base64,${frame.data}`;
+}
+
+function approvalKindLabel(payload: ApprovalPayload): string {
+  switch (payload.kind) {
+    case "day_list":
+      return "Day list";
+    case "day_index":
+      return "Day index";
+    case "chunk_context":
+      return "Chunk context";
+  }
+}
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabId>("controls");
@@ -81,7 +144,7 @@ export default function App() {
   const [aiSettings, setAISettings] = useState<AISettings>(fallbackAISettings);
   const [settingsTimeoutSeconds, setSettingsTimeoutSeconds] = useState(120);
   const [chunkDurationMinutes, setChunkDurationMinutes] = useState(5);
-  const [expandedRequestIds, setExpandedRequestIds] = useState<Record<string, boolean>>({});
+  const [approvalDrafts, setApprovalDrafts] = useState<Record<string, ApprovalPayload>>({});
   const [approvalNotice, setApprovalNotice] = useState<string | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -308,15 +371,31 @@ export default function App() {
     }
   }, []);
 
-  const resolveRequest = useCallback(async (requestId: string, resolution: "approved" | "rejected") => {
-    try {
-      setError(null);
-      await contextManager.resolveApproval(requestId, resolution);
-      setPendingApprovals((current) => current.filter((request) => request.id !== requestId));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to resolve request");
-    }
+  const updateApprovalDraft = useCallback((requestId: string, nextPayload: ApprovalPayload) => {
+    setApprovalDrafts((current) => ({ ...current, [requestId]: nextPayload }));
   }, []);
+
+  const resolveRequest = useCallback(
+    async (request: ApprovalRequest, resolution: "approved" | "rejected") => {
+      try {
+        setError(null);
+        await contextManager.resolveApproval(
+          request.id,
+          resolution,
+          resolution === "approved" ? approvalDrafts[request.id] || request.payload : undefined
+        );
+        setPendingApprovals((current) => current.filter((pending) => pending.id !== request.id));
+        setApprovalDrafts((current) => {
+          const next = { ...current };
+          delete next[request.id];
+          return next;
+        });
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to resolve request");
+      }
+    },
+    [approvalDrafts]
+  );
 
   const approveAll = useCallback(async () => {
     try {
@@ -479,6 +558,16 @@ export default function App() {
     setSettingsTimeoutSeconds(Math.max(5, Math.round(approvalSettings.timeoutMs / 1000)));
   }, [approvalSettings.timeoutMs]);
 
+  useEffect(() => {
+    setApprovalDrafts((current) => {
+      const next: Record<string, ApprovalPayload> = {};
+      for (const request of pendingApprovals) {
+        next[request.id] = current[request.id] || request.payload;
+      }
+      return next;
+    });
+  }, [pendingApprovals]);
+
   const pendingCount = pendingApprovals.length;
   const isLocalProvider = aiSettings.provider === "local";
   const statusToneClass = processingStatus.isProcessing
@@ -496,6 +585,193 @@ export default function App() {
         : remoteAccessState.status === "starting" || remoteAccessState.status === "reconnecting"
           ? "tone-processing"
           : "tone-muted";
+
+  const renderDayListApproval = (request: ApprovalRequest, payload: DayListApprovalPayload) => (
+    <div className="approval-stack">
+      <div className="approval-chip-row">
+        <span className="approval-kind-pill">{approvalKindLabel(payload)}</span>
+        <span className="approval-helper-pill">Approve as shown</span>
+      </div>
+      <div className="approval-day-grid">
+        {payload.days.length === 0 ? (
+          <p className="empty-state">No stored context days found.</p>
+        ) : (
+          payload.days.map((day) => (
+            <article key={`${request.id}-${day.date}`} className="approval-day-card">
+              <div className="approval-day-header">
+                <div>
+                  <p className="approval-day-date">{formatFriendlyDate(day.date)}</p>
+                  <p className="approval-day-subtitle">{day.date}</p>
+                </div>
+                <span className="approval-count-pill">
+                  {day.chunkCount} chunk{day.chunkCount === 1 ? "" : "s"}
+                </span>
+              </div>
+              <div className="approval-day-metadata">
+                <span>{day.firstChunkTime ? formatFriendlyTime(day.firstChunkTime) : "No start time"}</span>
+                <span>{day.lastChunkTime ? formatFriendlyTime(day.lastChunkTime) : "No end time"}</span>
+                <span>{day.hasIndex ? "Indexed" : "Missing index"}</span>
+              </div>
+            </article>
+          ))
+        )}
+      </div>
+    </div>
+  );
+
+  const renderDayIndexApproval = (request: ApprovalRequest, payload: DayIndexApprovalPayload) => {
+    const sections = parseIndexSections(payload.indexText);
+    return (
+      <div className="approval-stack">
+        <div className="approval-chip-row">
+          <span className="approval-kind-pill">{approvalKindLabel(payload)}</span>
+          <span className="approval-helper-pill">Edits apply only to this approval</span>
+        </div>
+        <div className="approval-date-hero">
+          <div>
+            <p className="approval-date-label">{formatFriendlyDate(payload.date)}</p>
+            <h3 className="approval-date-title">{payload.date}</h3>
+          </div>
+          <div className="approval-chip-row">
+            <span className="approval-count-pill">
+              {payload.chunkCount} chunk{payload.chunkCount === 1 ? "" : "s"}
+            </span>
+            <span className="approval-count-pill">{payload.chunkKeys.length} keys</span>
+          </div>
+        </div>
+        <div className="approval-time-section-list">
+          {sections.length === 0 ? (
+            <p className="empty-state">No timestamp sections detected in this index.</p>
+          ) : (
+            sections.map((section, index) => (
+              <article key={`${request.id}-${section.time}-${index}`} className="approval-time-card">
+                <div className="approval-time-pill">{formatFriendlyTime(section.time)}</div>
+                <p className="approval-time-text">{section.summaryText}</p>
+              </article>
+            ))
+          )}
+        </div>
+        <div className="approval-editor-block">
+          <label className="field-label" htmlFor={`approval-index-${request.id}`}>
+            Outgoing index text
+          </label>
+          <textarea
+            id={`approval-index-${request.id}`}
+            className="field-input approval-textarea"
+            value={payload.indexText}
+            onChange={(event) =>
+              updateApprovalDraft(request.id, {
+                ...payload,
+                indexText: event.target.value,
+              })
+            }
+          />
+        </div>
+      </div>
+    );
+  };
+
+  const renderChunkContextApproval = (
+    request: ApprovalRequest,
+    payload: ChunkContextApprovalPayload
+  ) => (
+    <div className="approval-stack">
+      <div className="approval-chip-row">
+        <span className="approval-kind-pill">{approvalKindLabel(payload)}</span>
+        <span className="approval-helper-pill">Edits apply only to this approval</span>
+      </div>
+      <div className="approval-date-hero">
+        <div>
+          <p className="approval-date-label">{formatFriendlyDate(payload.date)}</p>
+          <h3 className="approval-date-title">{formatFriendlyTime(payload.time)}</h3>
+          <p className="approval-day-subtitle">{payload.chunkKey}</p>
+        </div>
+        <span className="approval-count-pill">
+          {payload.frames.length} frame{payload.frames.length === 1 ? "" : "s"}
+        </span>
+      </div>
+      <div className="approval-editor-block">
+        <label className="field-label" htmlFor={`approval-summary-${request.id}`}>
+          Outgoing summary
+        </label>
+        <textarea
+          id={`approval-summary-${request.id}`}
+          className="field-input approval-textarea approval-textarea-short"
+          value={payload.summaryText}
+          onChange={(event) =>
+            updateApprovalDraft(request.id, {
+              ...payload,
+              summaryText: event.target.value,
+            })
+          }
+        />
+      </div>
+      <div className="approval-editor-block">
+        <label className="field-label" htmlFor={`approval-meta-${request.id}`}>
+          Outgoing metadata
+        </label>
+        <textarea
+          id={`approval-meta-${request.id}`}
+          className="field-input approval-textarea"
+          value={payload.metaText}
+          onChange={(event) =>
+            updateApprovalDraft(request.id, {
+              ...payload,
+              metaText: event.target.value,
+            })
+          }
+        />
+      </div>
+      <div className="approval-frame-header">
+        <div>
+          <p className="approval-date-label">Frames</p>
+          <p className="approval-day-subtitle">Remove any frame you do not want to send.</p>
+        </div>
+        <span className="approval-count-pill">
+          {payload.frames.length} selected
+        </span>
+      </div>
+      <div className="approval-frame-grid">
+        {payload.frames.length === 0 ? (
+          <p className="empty-state">No frames selected for this approval.</p>
+        ) : (
+          payload.frames.map((frame) => (
+            <article key={`${request.id}-${frame.name}`} className="approval-frame-card">
+              <button
+                className="approval-frame-remove"
+                onClick={() =>
+                  updateApprovalDraft(request.id, {
+                    ...payload,
+                    frames: payload.frames.filter((candidate) => candidate.name !== frame.name),
+                  })
+                }
+                type="button"
+              >
+                Remove
+              </button>
+              <img className="approval-frame-image" src={frameDataUrl(frame)} alt={frame.name} />
+              <div className="approval-frame-meta">
+                <span>{frame.name}</span>
+                <span>{frame.mimeType}</span>
+              </div>
+            </article>
+          ))
+        )}
+      </div>
+    </div>
+  );
+
+  const renderApprovalCard = (request: ApprovalRequest) => {
+    const payload = approvalDrafts[request.id] || request.payload;
+    switch (payload.kind) {
+      case "day_list":
+        return renderDayListApproval(request, payload);
+      case "day_index":
+        return renderDayIndexApproval(request, payload);
+      case "chunk_context":
+        return renderChunkContextApproval(request, payload);
+    }
+  };
 
   return (
     <div className="app-shell">
@@ -608,49 +884,33 @@ export default function App() {
             {pendingCount === 0 && <p className="empty-state">No pending requests.</p>}
 
             <div className="request-list">
-              {pendingApprovals.map((request) => {
-                const isExpanded = expandedRequestIds[request.id] === true;
-                return (
-                  <article key={request.id} className="request-card">
-                    <div className="request-header">
-                      <div className="request-meta">
-                        <div className="request-title">{request.query}</div>
-                        <div className="request-date">
-                          {new Date(request.createdAt).toLocaleString()}
-                        </div>
-                      </div>
-                      <div className="button-row">
-                        <button
-                          className="button button-secondary"
-                          onClick={() => void resolveRequest(request.id, "approved")}
-                          type="button"
-                        >
-                          Approve
-                        </button>
-                        <button
-                          className="button button-ghost"
-                          onClick={() => void resolveRequest(request.id, "rejected")}
-                          type="button"
-                        >
-                          Reject
-                        </button>
-                      </div>
+              {pendingApprovals.map((request) => (
+                <article key={request.id} className="request-card approval-request-card">
+                  <div className="request-header">
+                    <div className="request-meta">
+                      <div className="request-title">{request.title || request.query}</div>
+                      <div className="request-date">{formatCreatedAt(request.createdAt)}</div>
                     </div>
-                    <pre className={`request-preview ${isExpanded ? "is-expanded" : ""}`}>
-                      {isExpanded ? request.fullResult : request.resultPreview}
-                    </pre>
-                    <button
-                      className="button button-text"
-                      onClick={() =>
-                        setExpandedRequestIds((current) => ({ ...current, [request.id]: !isExpanded }))
-                      }
-                      type="button"
-                    >
-                      {isExpanded ? "Collapse" : "Expand"}
-                    </button>
-                  </article>
-                );
-              })}
+                    <div className="button-row">
+                      <button
+                        className="button button-secondary"
+                        onClick={() => void resolveRequest(request, "approved")}
+                        type="button"
+                      >
+                        Approve
+                      </button>
+                      <button
+                        className="button button-ghost"
+                        onClick={() => void resolveRequest(request, "rejected")}
+                        type="button"
+                      >
+                        Reject
+                      </button>
+                    </div>
+                  </div>
+                  {renderApprovalCard(request)}
+                </article>
+              ))}
             </div>
           </section>
         )}

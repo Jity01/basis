@@ -10,13 +10,18 @@ import { CONTEXT_ROOT } from "@context-manager/config";
 import { getChunkContext, getDayIndex, listDays } from "@context-manager/core";
 import { z } from "zod";
 import {
+  formatApprovalPayload,
   getApprovalSettings,
   listPendingApprovals,
   onApprovalRequest,
   requestApproval,
   resolveApproval,
   resolveAllApprovals,
+  type ApprovalPayload,
   type ApprovalResolution,
+  type ChunkContextApprovalPayload,
+  type DayIndexApprovalPayload,
+  type DayListApprovalPayload,
   updateApprovalSettings,
 } from "./approval";
 import { getAuthInfoForLocalRequest, oauthProvider } from "./auth";
@@ -63,73 +68,39 @@ function makeTextResult(text: string, isError = false): ToolResult {
   };
 }
 
-async function approveOrError(label: string, preview: string): Promise<ToolResult | null> {
-  const approval = await requestApproval(label, preview || "(no content)");
+async function approvePayloadOrError(
+  query: string,
+  title: string,
+  payload: ApprovalPayload
+): Promise<{ approvedPayload: ApprovalPayload } | ToolResult> {
+  const approval = await requestApproval({
+    query,
+    title,
+    payload,
+  });
   if (approval.status === "rejected") {
     return makeTextResult("User declined to share this context.", true);
   }
   if (approval.status === "timeout") {
     return makeTextResult("Request timed out.", true);
   }
-  return null;
+  return { approvedPayload: approval.approvedPayload ?? payload };
 }
 
-function formatListDaysPreview(
-  days: Array<{
-    date: string;
-    chunkCount: number;
-    firstChunkTime: string | null;
-    lastChunkTime: string | null;
-    hasIndex: boolean;
-  }>
-): string {
-  if (days.length === 0) {
-    return "No stored context days found.";
+function toolResultFromPayload(payload: ApprovalPayload): ToolResult {
+  if (payload.kind !== "chunk_context") {
+    return makeTextResult(formatApprovalPayload(payload));
   }
-  return [
-    "Days:",
-    ...days.map((day) => {
-      const range =
-        day.firstChunkTime && day.lastChunkTime
-          ? `${day.firstChunkTime} - ${day.lastChunkTime}`
-          : "no chunk times";
-      return `- ${day.date} | chunks=${day.chunkCount} | range=${range} | index=${day.hasIndex ? "yes" : "no"}`;
-    }),
-  ].join("\n");
-}
-
-function formatDayIndexPreview(day: {
-  date: string;
-  chunkCount: number;
-  chunkKeys: string[];
-  indexText: string;
-}): string {
-  return [
-    `Date: ${day.date}`,
-    `Chunk count: ${day.chunkCount}`,
-    `Chunk keys: ${day.chunkKeys.length > 0 ? day.chunkKeys.join(", ") : "(none)"}`,
-    "Index:",
-    day.indexText || "(missing index.txt)",
-  ].join("\n");
-}
-
-function formatChunkContextPreview(chunk: {
-  chunkKey: string;
-  summaryText: string;
-  meta: Record<string, unknown> | null;
-  frames: Array<{ name: string; mimeType: string }>;
-}): string {
-  return [
-    `Chunk: ${chunk.chunkKey}`,
-    "Summary:",
-    chunk.summaryText,
-    "Meta:",
-    chunk.meta ? JSON.stringify(chunk.meta, null, 2) : "(missing meta.json)",
-    "Frames:",
-    chunk.frames.length > 0
-      ? chunk.frames.map((frame) => `- ${frame.name} (${frame.mimeType})`).join("\n")
-      : "(none)",
-  ].join("\n");
+  return {
+    content: [
+      { type: "text", text: formatApprovalPayload(payload) },
+      ...payload.frames.map((frame) => ({
+        type: "image" as const,
+        data: frame.data,
+        mimeType: frame.mimeType,
+      })),
+    ],
+  };
 }
 
 function createMcpServer(): McpServer {
@@ -216,12 +187,16 @@ async function runListDays(args: unknown): Promise<ToolResult> {
       : DEFAULT_LIST_DAYS_LIMIT;
 
   const days = await listDays(contextRoot, limit);
-  const approvalError = await approveOrError("Share context day list", formatListDaysPreview(days));
-  if (approvalError) {
-    return approvalError;
+  const payload: DayListApprovalPayload = {
+    kind: "day_list",
+    days,
+  };
+  const approval = await approvePayloadOrError("Share context day list", "Share context day list", payload);
+  if ("content" in approval) {
+    return approval;
   }
 
-  return makeTextResult(JSON.stringify({ days }, null, 2));
+  return toolResultFromPayload(approval.approvedPayload);
 }
 
 async function runGetDayIndex(args: unknown): Promise<ToolResult> {
@@ -237,12 +212,23 @@ async function runGetDayIndex(args: unknown): Promise<ToolResult> {
   }
 
   const day = await getDayIndex(date, contextRoot);
-  const approvalError = await approveOrError(`Share context day ${day.date}`, formatDayIndexPreview(day));
-  if (approvalError) {
-    return approvalError;
+  const payload: DayIndexApprovalPayload = {
+    kind: "day_index",
+    date: day.date,
+    chunkCount: day.chunkCount,
+    chunkKeys: day.chunkKeys,
+    indexText: day.indexText,
+  };
+  const approval = await approvePayloadOrError(
+    `Share context day ${day.date}`,
+    `Share context day ${day.date}`,
+    payload
+  );
+  if ("content" in approval) {
+    return approval;
   }
 
-  return makeTextResult(JSON.stringify(day, null, 2));
+  return toolResultFromPayload(approval.approvedPayload);
 }
 
 async function runGetChunkContext(args: unknown): Promise<ToolResult> {
@@ -258,42 +244,29 @@ async function runGetChunkContext(args: unknown): Promise<ToolResult> {
   }
 
   const chunk = await getChunkContext(chunkKey, contextRoot);
-  const approvalError = await approveOrError(
-    `Share chunk ${chunk.chunkKey}`,
-    formatChunkContextPreview({
-      chunkKey: chunk.chunkKey,
-      summaryText: chunk.summaryText,
-      meta: chunk.meta,
-      frames: chunk.frames.map((frame) => ({ name: frame.name, mimeType: frame.mimeType })),
-    })
-  );
-  if (approvalError) {
-    return approvalError;
-  }
-
-  const textPayload = {
+  const payload: ChunkContextApprovalPayload = {
+    kind: "chunk_context",
     chunkKey: chunk.chunkKey,
     date: chunk.date,
     time: chunk.time,
     summaryText: chunk.summaryText,
-    meta: chunk.meta,
+    metaText: chunk.meta ? JSON.stringify(chunk.meta, null, 2) : "",
     frames: chunk.frames.map((frame) => ({
       name: frame.name,
-      path: frame.path,
       mimeType: frame.mimeType,
+      data: frame.data,
     })),
   };
+  const approval = await approvePayloadOrError(
+    `Share chunk ${chunk.chunkKey}`,
+    `Share chunk ${chunk.chunkKey}`,
+    payload
+  );
+  if ("content" in approval) {
+    return approval;
+  }
 
-  return {
-    content: [
-      { type: "text", text: JSON.stringify(textPayload, null, 2) },
-      ...chunk.frames.map((frame) => ({
-        type: "image" as const,
-        data: frame.data,
-        mimeType: frame.mimeType,
-      })),
-    ],
-  };
+  return toolResultFromPayload(approval.approvedPayload);
 }
 
 function isInitializePayload(body: unknown): boolean {
@@ -461,10 +434,10 @@ app.post("/approvals/:id", (req, res) => {
     sendJson(res, 400, { error: "Missing approval request id." });
     return;
   }
-  const body = req.body as { resolution?: unknown; approved?: unknown };
+  const body = req.body as { resolution?: unknown; approved?: unknown; approvedPayload?: unknown };
   const resolution: ApprovalResolution =
     body?.resolution === "approved" || body?.approved === true ? "approved" : "rejected";
-  const ok = resolveApproval(requestId, resolution);
+  const ok = resolveApproval(requestId, resolution, body?.approvedPayload);
   if (!ok) {
     sendJson(res, 404, { error: `No pending approval found for id ${requestId}` });
     return;
@@ -509,7 +482,7 @@ onApprovalRequest((request) => {
 process.on("message", (msg: unknown) => {
   const payload = msg as {
     type?: string;
-    payload?: { requestId?: unknown; resolution?: unknown };
+    payload?: { requestId?: unknown; resolution?: unknown; approvedPayload?: unknown };
   };
   if (payload?.type !== "mcp-approval-response") {
     return;
@@ -519,7 +492,7 @@ process.on("message", (msg: unknown) => {
   if (!requestId || (resolution !== "approved" && resolution !== "rejected")) {
     return;
   }
-  resolveApproval(requestId, resolution);
+  resolveApproval(requestId, resolution, payload.payload?.approvedPayload);
 });
 
 app.listen(MCP_PORT, MCP_HOST, () => {

@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
+import type { ApprovalPayload, ApprovalState } from "./approvalTypes";
 
 contextBridge.exposeInMainWorld("contextManager", {
   startRecording: () => ipcRenderer.invoke("start-recording"),
@@ -46,8 +47,11 @@ contextBridge.exposeInMainWorld("contextManager", {
   getDesktopSources: (opts: { types: ("screen" | "window")[] }) =>
     ipcRenderer.invoke("get-desktop-sources", opts),
   getApprovalState: () => ipcRenderer.invoke("get-approval-state"),
-  resolveApproval: (requestId: string, resolution: "approved" | "rejected") =>
-    ipcRenderer.invoke("resolve-approval", { requestId, resolution }),
+  resolveApproval: (
+    requestId: string,
+    resolution: "approved" | "rejected",
+    approvedPayload?: ApprovalPayload
+  ) => ipcRenderer.invoke("resolve-approval", { requestId, resolution, approvedPayload }),
   approveAllRequests: () => ipcRenderer.invoke("approve-all-requests"),
   updateApprovalSettings: (settings: { autoApproveAllRequests?: boolean; timeoutMs?: number }) =>
     ipcRenderer.invoke("update-approval-settings", settings),
@@ -86,36 +90,10 @@ contextBridge.exposeInMainWorld("contextManager", {
     };
   },
   onApprovalState: (
-    callback: (state: {
-      pending: Array<{
-        id: string;
-        createdAt: string;
-        query: string;
-        resultPreview: string;
-        fullResult: string;
-      }>;
-      settings: {
-        autoApproveAllRequests: boolean;
-        timeoutMs: number;
-      };
-    }) => void
+    callback: (state: ApprovalState) => void
   ) => {
     const listener = (_event: unknown, state: unknown) => {
-      callback(
-        state as {
-          pending: Array<{
-            id: string;
-            createdAt: string;
-            query: string;
-            resultPreview: string;
-            fullResult: string;
-          }>;
-          settings: {
-            autoApproveAllRequests: boolean;
-            timeoutMs: number;
-          };
-        }
-      );
+      callback(state as ApprovalState);
     };
     ipcRenderer.on("approval-state", listener);
     return () => {

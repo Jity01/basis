@@ -425,6 +425,201 @@ code {
   max-height: 320px;
 }
 
+.approval-request-card {
+  display: grid;
+  gap: 18px;
+}
+
+.approval-stack {
+  display: grid;
+  gap: 16px;
+}
+
+.approval-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.approval-kind-pill,
+.approval-helper-pill,
+.approval-count-pill,
+.approval-time-pill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+}
+
+.approval-kind-pill {
+  background: rgba(146, 184, 154, 0.12);
+  color: var(--accent);
+  font-size: 0.82rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.approval-helper-pill {
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  font-size: 0.84rem;
+}
+
+.approval-count-pill {
+  background: var(--surface-muted);
+  color: var(--headline);
+  font-weight: 600;
+}
+
+.approval-date-hero,
+.approval-frame-header,
+.approval-day-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.approval-date-hero {
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  background: linear-gradient(180deg, rgba(146, 184, 154, 0.12), rgba(21, 26, 24, 0.3));
+}
+
+.approval-date-label,
+.approval-day-subtitle {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.approval-date-label {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.approval-date-title,
+.approval-day-date {
+  margin: 8px 0 0;
+  color: var(--headline);
+}
+
+.approval-date-title {
+  font-size: 1.45rem;
+}
+
+.approval-day-date {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.approval-day-grid,
+.approval-time-section-list,
+.approval-frame-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.approval-day-grid {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.approval-day-card,
+.approval-time-card,
+.approval-editor-block,
+.approval-frame-card {
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  background: var(--surface-muted);
+}
+
+.approval-day-card,
+.approval-time-card,
+.approval-editor-block {
+  padding: 16px;
+}
+
+.approval-day-metadata {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+}
+
+.approval-time-card {
+  display: grid;
+  gap: 12px;
+}
+
+.approval-time-pill {
+  width: fit-content;
+  background: rgba(255, 248, 241, 0.04);
+  color: var(--headline);
+  font-weight: 600;
+}
+
+.approval-time-text {
+  margin: 0;
+  color: var(--text);
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+.approval-textarea {
+  min-height: 180px;
+  resize: vertical;
+}
+
+.approval-textarea-short {
+  min-height: 120px;
+}
+
+.approval-frame-grid {
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.approval-frame-card {
+  position: relative;
+  overflow: hidden;
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.approval-frame-remove {
+  justify-self: end;
+  border: 1px solid rgba(255, 248, 241, 0.12);
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: rgba(16, 19, 18, 0.82);
+  color: var(--headline);
+  cursor: pointer;
+}
+
+.approval-frame-remove:hover {
+  background: rgba(40, 46, 44, 0.92);
+}
+
+.approval-frame-image {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+}
+
+.approval-frame-meta {
+  display: grid;
+  gap: 2px;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
 /* ── Form controls ── */
 
 .field-label {

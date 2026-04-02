@@ -7,7 +7,8 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "start": "node dist/server.js"
+    "start": "node dist/server.js",
+    "approval-test": "node ./tests/run-approval-smoke.mjs"
   },
   "dependencies": {
     "@context-manager/config": "workspace:*",

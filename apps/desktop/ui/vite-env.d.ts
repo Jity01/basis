@@ -1,5 +1,7 @@
 /// <reference types="vite/client" />
 
+import type { ApprovalPayload, ApprovalState } from "../src/approvalTypes";
+
 interface ContextManagerAPI {
   startRecording: () => Promise<{ success: boolean; filePath: string }>;
   stopRecording: () => Promise<{ success: boolean }>;
@@ -38,20 +40,12 @@ interface ContextManagerAPI {
   getDesktopSources: (opts: { types: ("screen" | "window")[] }) => Promise<
     Array<{ id: string; name: string }>
   >;
-  getApprovalState: () => Promise<{
-    pending: Array<{
-      id: string;
-      createdAt: string;
-      query: string;
-      resultPreview: string;
-      fullResult: string;
-    }>;
-    settings: {
-      autoApproveAllRequests: boolean;
-      timeoutMs: number;
-    };
-  }>;
-  resolveApproval: (requestId: string, resolution: "approved" | "rejected") => Promise<{ ok: boolean }>;
+  getApprovalState: () => Promise<ApprovalState>;
+  resolveApproval: (
+    requestId: string,
+    resolution: "approved" | "rejected",
+    approvedPayload?: ApprovalPayload
+  ) => Promise<{ ok: boolean }>;
   approveAllRequests: () => Promise<{ ok: boolean; resolvedCount: number }>;
   updateApprovalSettings: (settings: {
     autoApproveAllRequests?: boolean;
@@ -98,19 +92,7 @@ interface ContextManagerAPI {
     authToken: string | null;
     error: string | null;
   }) => void) => () => void;
-  onApprovalState: (callback: (state: {
-    pending: Array<{
-      id: string;
-      createdAt: string;
-      query: string;
-      resultPreview: string;
-      fullResult: string;
-    }>;
-    settings: {
-      autoApproveAllRequests: boolean;
-      timeoutMs: number;
-    };
-  }) => void) => () => void;
+  onApprovalState: (callback: (state: ApprovalState) => void) => () => void;
 }
 
 declare global {

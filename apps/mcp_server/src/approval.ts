@@ -2,18 +2,64 @@ import { randomUUID } from "crypto";
 
 export type ApprovalStatus = "approved" | "rejected" | "timeout";
 export type ApprovalResolution = "approved" | "rejected";
+export type ApprovalKind = "day_list" | "day_index" | "chunk_context";
+
+export type DayListApprovalDay = {
+  date: string;
+  chunkCount: number;
+  firstChunkTime: string | null;
+  lastChunkTime: string | null;
+  hasIndex: boolean;
+};
+
+export type DayListApprovalPayload = {
+  kind: "day_list";
+  days: DayListApprovalDay[];
+};
+
+export type DayIndexApprovalPayload = {
+  kind: "day_index";
+  date: string;
+  chunkCount: number;
+  chunkKeys: string[];
+  indexText: string;
+};
+
+export type ApprovalFrame = {
+  name: string;
+  mimeType: string;
+  data: string;
+};
+
+export type ChunkContextApprovalPayload = {
+  kind: "chunk_context";
+  chunkKey: string;
+  date: string;
+  time: string;
+  summaryText: string;
+  metaText: string;
+  frames: ApprovalFrame[];
+};
+
+export type ApprovalPayload =
+  | DayListApprovalPayload
+  | DayIndexApprovalPayload
+  | ChunkContextApprovalPayload;
 
 export type ApprovalRequest = {
   id: string;
   createdAt: string;
   query: string;
+  title: string;
+  kind: ApprovalKind;
   resultPreview: string;
   fullResult: string;
+  payload: ApprovalPayload;
 };
 
 type PendingApproval = {
   request: ApprovalRequest;
-  resolve: (status: ApprovalStatus) => void;
+  resolve: (result: { status: ApprovalStatus; approvedPayload?: ApprovalPayload }) => void;
   timeout: NodeJS.Timeout;
 };
 
@@ -27,6 +73,14 @@ let electronIpcSender: ElectronIpcSender | null = null;
 export type ApprovalSettings = {
   autoApproveAllRequests: boolean;
   timeoutMs: number;
+};
+
+type ApprovalRequestInput = {
+  query: string;
+  title?: string;
+  payload: ApprovalPayload;
+  resultPreview?: string;
+  fullResult?: string;
 };
 
 const DEFAULT_TIMEOUT_MS = 120_000;
@@ -82,17 +136,6 @@ export function listPendingApprovals(): ApprovalRequest[] {
   return Array.from(pendingRequests.values()).map((entry) => entry.request);
 }
 
-export function resolveApproval(id: string, resolution: ApprovalResolution): boolean {
-  const pending = pendingRequests.get(id);
-  if (!pending) {
-    return false;
-  }
-  clearTimeout(pending.timeout);
-  pendingRequests.delete(id);
-  pending.resolve(resolution);
-  return true;
-}
-
 export function resolveAllApprovals(resolution: ApprovalResolution): number {
   const pendingIds = Array.from(pendingRequests.keys());
   for (const id of pendingIds) {
@@ -116,29 +159,194 @@ export function updateApprovalSettings(patch: Partial<ApprovalSettings>): Approv
   return getApprovalSettings();
 }
 
+function truncatePreview(text: string): string {
+  return text.length > 500 ? `${text.slice(0, 500)}\n...(truncated preview)` : text;
+}
+
+function formatDayListPayload(payload: DayListApprovalPayload): string {
+  if (payload.days.length === 0) {
+    return "No stored context days found.";
+  }
+  return [
+    "Days:",
+    ...payload.days.map((day) => {
+      const range =
+        day.firstChunkTime && day.lastChunkTime
+          ? `${day.firstChunkTime} - ${day.lastChunkTime}`
+          : "no chunk times";
+      return `- ${day.date} | chunks=${day.chunkCount} | range=${range} | index=${day.hasIndex ? "yes" : "no"}`;
+    }),
+  ].join("\n");
+}
+
+function formatDayIndexPayload(payload: DayIndexApprovalPayload): string {
+  return [
+    `Date: ${payload.date}`,
+    `Chunk count: ${payload.chunkCount}`,
+    `Chunk keys: ${payload.chunkKeys.length > 0 ? payload.chunkKeys.join(", ") : "(none)"}`,
+    "Index:",
+    payload.indexText || "(missing index.txt)",
+  ].join("\n");
+}
+
+function formatChunkContextPayload(payload: ChunkContextApprovalPayload): string {
+  return [
+    `Chunk: ${payload.chunkKey}`,
+    "Summary:",
+    payload.summaryText || "(empty summary)",
+    "Meta:",
+    payload.metaText || "(missing meta.json)",
+    "Frames:",
+    payload.frames.length > 0
+      ? payload.frames.map((frame) => `- ${frame.name} (${frame.mimeType})`).join("\n")
+      : "(none)",
+  ].join("\n");
+}
+
+export function formatApprovalPayload(payload: ApprovalPayload): string {
+  switch (payload.kind) {
+    case "day_list":
+      return formatDayListPayload(payload);
+    case "day_index":
+      return formatDayIndexPayload(payload);
+    case "chunk_context":
+      return formatChunkContextPayload(payload);
+  }
+}
+
+function isDayListApprovalPayload(value: unknown): value is DayListApprovalPayload {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    (value as { kind?: unknown }).kind === "day_list" &&
+    Array.isArray((value as { days?: unknown }).days)
+  );
+}
+
+function isDayIndexApprovalPayload(value: unknown): value is DayIndexApprovalPayload {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    (value as { kind?: unknown }).kind === "day_index" &&
+    typeof (value as { date?: unknown }).date === "string" &&
+    Array.isArray((value as { chunkKeys?: unknown }).chunkKeys) &&
+    typeof (value as { indexText?: unknown }).indexText === "string"
+  );
+}
+
+function isChunkContextApprovalPayload(value: unknown): value is ChunkContextApprovalPayload {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    (value as { kind?: unknown }).kind === "chunk_context" &&
+    typeof (value as { chunkKey?: unknown }).chunkKey === "string" &&
+    typeof (value as { date?: unknown }).date === "string" &&
+    typeof (value as { time?: unknown }).time === "string" &&
+    typeof (value as { summaryText?: unknown }).summaryText === "string" &&
+    typeof (value as { metaText?: unknown }).metaText === "string" &&
+    Array.isArray((value as { frames?: unknown }).frames)
+  );
+}
+
+function normalizeApprovedPayload(original: ApprovalPayload, candidate: unknown): ApprovalPayload {
+  if (candidate === null || typeof candidate !== "object") {
+    return original;
+  }
+
+  switch (original.kind) {
+    case "day_list":
+      if (!isDayListApprovalPayload(candidate)) {
+        return original;
+      }
+      return {
+        kind: "day_list",
+        days: candidate.days
+          .filter((day) => day && typeof day === "object")
+          .map((day) => {
+            const parsed = day as Record<string, unknown>;
+            return {
+              date: typeof parsed.date === "string" ? parsed.date : "",
+              chunkCount:
+                typeof parsed.chunkCount === "number" && Number.isFinite(parsed.chunkCount)
+                  ? Math.max(0, Math.trunc(parsed.chunkCount))
+                  : 0,
+              firstChunkTime: typeof parsed.firstChunkTime === "string" ? parsed.firstChunkTime : null,
+              lastChunkTime: typeof parsed.lastChunkTime === "string" ? parsed.lastChunkTime : null,
+              hasIndex: parsed.hasIndex === true,
+            };
+          }),
+      };
+    case "day_index":
+      if (!isDayIndexApprovalPayload(candidate) || candidate.date !== original.date) {
+        return original;
+      }
+      return {
+        kind: "day_index",
+        date: original.date,
+        chunkCount:
+          typeof candidate.chunkCount === "number" && Number.isFinite(candidate.chunkCount)
+            ? Math.max(0, Math.trunc(candidate.chunkCount))
+            : original.chunkCount,
+        chunkKeys: Array.isArray(candidate.chunkKeys)
+          ? candidate.chunkKeys.filter((value): value is string => typeof value === "string")
+          : original.chunkKeys,
+        indexText: candidate.indexText,
+      };
+    case "chunk_context":
+      if (!isChunkContextApprovalPayload(candidate) || candidate.chunkKey !== original.chunkKey) {
+        return original;
+      }
+      return {
+        kind: "chunk_context",
+        chunkKey: original.chunkKey,
+        date: original.date,
+        time: original.time,
+        summaryText: candidate.summaryText,
+        metaText: candidate.metaText,
+        frames: candidate.frames
+          .filter((frame) => frame && typeof frame === "object")
+          .map((frame) => {
+            const parsed = frame as Record<string, unknown>;
+            return {
+              name: typeof parsed.name === "string" ? parsed.name : "",
+              mimeType: typeof parsed.mimeType === "string" ? parsed.mimeType : "image/jpeg",
+              data: typeof parsed.data === "string" ? parsed.data : "",
+            };
+          })
+          .filter((frame) => frame.name && frame.data),
+      };
+  }
+}
+
 export async function requestApproval(
-  query: string,
-  fullResult: string
-): Promise<{ status: ApprovalStatus; requestId: string }> {
+  input: ApprovalRequestInput
+): Promise<{ status: ApprovalStatus; requestId: string; approvedPayload?: ApprovalPayload }> {
   const requestId = randomUUID();
+  const fullResult = input.fullResult || formatApprovalPayload(input.payload);
+  const preview = input.resultPreview || truncatePreview(fullResult);
+  const title = input.title?.trim() || input.query;
 
   // for the lucky ones
   if (approvalSettings.autoApproveAllRequests) {
-    return { status: "approved", requestId };
+    return { status: "approved", requestId, approvedPayload: input.payload };
   }
-
-  const preview =
-    fullResult.length > 500 ? `${fullResult.slice(0, 500)}\n...(truncated preview)` : fullResult;
 
   const request: ApprovalRequest = {
     id: requestId,
     createdAt: new Date().toISOString(),
-    query,
+    query: input.query,
+    title,
+    kind: input.payload.kind,
     fullResult,
     resultPreview: preview,
+    payload: input.payload,
   };
 
-  return await new Promise<{ status: ApprovalStatus; requestId: string }>((resolve) => {
+  return await new Promise<{
+    status: ApprovalStatus;
+    requestId: string;
+    approvedPayload?: ApprovalPayload;
+  }>((resolve) => {
     const timeout = setTimeout(() => {
       pendingRequests.delete(requestId);
       resolve({ status: "timeout", requestId });
@@ -147,11 +355,32 @@ export async function requestApproval(
     pendingRequests.set(requestId, {
       request,
       timeout,
-      resolve: (status) => {
-        resolve({ status, requestId });
+      resolve: ({ status, approvedPayload }) => {
+        resolve({ status, requestId, approvedPayload });
       },
     });
 
     notifyListeners(request);
   });
+}
+
+export function resolveApproval(
+  id: string,
+  resolution: ApprovalResolution,
+  approvedPayload?: unknown
+): boolean {
+  const pending = pendingRequests.get(id);
+  if (!pending) {
+    return false;
+  }
+  clearTimeout(pending.timeout);
+  pendingRequests.delete(id);
+  pending.resolve({
+    status: resolution,
+    approvedPayload:
+      resolution === "approved"
+        ? normalizeApprovedPayload(pending.request.payload, approvedPayload ?? pending.request.payload)
+        : undefined,
+  });
+  return true;
 }

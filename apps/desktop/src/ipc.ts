@@ -21,6 +21,7 @@ import {
   type ChunkSettings,
 } from "@context-manager/core";
 import { startIdleMonitor } from "./idle";
+import type { ApprovalPayload, ApprovalSettings, ApprovalState, ApprovalRequest } from "./approvalTypes";
 
 let mainWindow: BrowserWindow | null = null;
 let writeStream: fs.WriteStream | null = null;
@@ -36,21 +37,6 @@ const SETTINGS_FILE_NAME = "settings.json";
 const CLOUDFLARED_URL_RE = /(https:\/\/[a-z0-9-]+\.trycloudflare\.com)/i;
 
 type ApprovalResolution = "approved" | "rejected";
-type ApprovalRequest = {
-  id: string;
-  createdAt: string;
-  query: string;
-  resultPreview: string;
-  fullResult: string;
-};
-type ApprovalSettings = {
-  autoApproveAllRequests: boolean;
-  timeoutMs: number;
-};
-type ApprovalState = {
-  pending: ApprovalRequest[];
-  settings: ApprovalSettings;
-};
 
 type RemoteAccessStatus = "disabled" | "starting" | "connected" | "reconnecting" | "error";
 type RemoteAccessSettings = {
@@ -439,12 +425,13 @@ async function fetchApprovalState(): Promise<ApprovalState> {
 
 async function postApprovalResolution(
   requestId: string,
-  resolution: ApprovalResolution
+  resolution: ApprovalResolution,
+  approvedPayload?: ApprovalPayload
 ): Promise<{ ok: boolean }> {
   const response = await fetch(`${mcpBaseUrl()}/approvals/${encodeURIComponent(requestId)}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ resolution }),
+    body: JSON.stringify({ resolution, approvedPayload }),
   });
   if (!response.ok) {
     throw new Error(`Failed resolving approval (${response.status}).`);
@@ -604,8 +591,15 @@ export function setupIpc(): void {
 
   ipcMain.handle(
     "resolve-approval",
-    async (_event, payload: { requestId: string; resolution: ApprovalResolution }) => {
-      return await postApprovalResolution(payload.requestId, payload.resolution);
+    async (
+      _event,
+      payload: {
+        requestId: string;
+        resolution: ApprovalResolution;
+        approvedPayload?: ApprovalPayload;
+      }
+    ) => {
+      return await postApprovalResolution(payload.requestId, payload.resolution, payload.approvedPayload);
     }
   );
 
