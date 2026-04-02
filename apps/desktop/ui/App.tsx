@@ -164,6 +164,7 @@ export default function App() {
   const [chunkDurationMinutes, setChunkDurationMinutes] = useState(5);
   const [approvalDrafts, setApprovalDrafts] = useState<Record<string, ApprovalPayload>>({});
   const [approvalNotice, setApprovalNotice] = useState<string | null>(null);
+  const [frameLightbox, setFrameLightbox] = useState<{ src: string; title: string } | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -590,6 +591,19 @@ export default function App() {
     });
   }, [pendingApprovals]);
 
+  useEffect(() => {
+    if (!frameLightbox) {
+      return;
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setFrameLightbox(null);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [frameLightbox]);
+
   const pendingCount = pendingApprovals.length;
   const isLocalProvider = aiSettings.provider === "local";
   const statusToneClass = processingStatus.isProcessing
@@ -751,7 +765,10 @@ export default function App() {
         </span>
       </div>
       <div className="approval-editor-block">
-        <label className="field-label" htmlFor={`approval-summary-${request.id}`}>
+        <label
+          className="field-label approval-editor-heading"
+          htmlFor={`approval-summary-${request.id}`}
+        >
           Outgoing summary
         </label>
         <textarea
@@ -767,7 +784,10 @@ export default function App() {
         />
       </div>
       <div className="approval-editor-block">
-        <label className="field-label" htmlFor={`approval-meta-${request.id}`}>
+        <label
+          className="field-label approval-editor-heading"
+          htmlFor={`approval-meta-${request.id}`}
+        >
           Outgoing metadata
         </label>
         <textarea
@@ -809,7 +829,16 @@ export default function App() {
               >
                 Remove
               </button>
-              <img className="approval-frame-image" src={frameDataUrl(frame)} alt={frame.name} />
+              <button
+                type="button"
+                className="approval-frame-image-button"
+                onClick={() =>
+                  setFrameLightbox({ src: frameDataUrl(frame), title: frame.name })
+                }
+                aria-label={`View full size: ${frame.name}`}
+              >
+                <img className="approval-frame-image" src={frameDataUrl(frame)} alt="" />
+              </button>
               <div className="approval-frame-meta">
                 <span>{frame.name}</span>
                 <span>{frame.mimeType}</span>
@@ -1156,6 +1185,39 @@ export default function App() {
           </div>
         </div>
       </div>
+
+      {frameLightbox ? (
+        <div
+          className="frame-lightbox-overlay"
+          role="presentation"
+          onClick={() => setFrameLightbox(null)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="frame-lightbox-title"
+            className="frame-lightbox-dialog"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              className="frame-lightbox-close"
+              onClick={() => setFrameLightbox(null)}
+              aria-label="Close"
+            >
+              Close
+            </button>
+            <img
+              className="frame-lightbox-image"
+              src={frameLightbox.src}
+              alt={frameLightbox.title}
+            />
+            <p id="frame-lightbox-title" className="frame-lightbox-caption">
+              {frameLightbox.title}
+            </p>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -551,6 +551,18 @@ code {
   padding: 16px;
 }
 
+.approval-editor-block .field-label {
+  margin-bottom: 10px;
+}
+
+.approval-editor-block .field-label.approval-editor-heading {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
 .approval-day-metadata {
   display: flex;
   flex-wrap: wrap;
@@ -640,6 +652,23 @@ code {
   background: rgba(40, 46, 44, 0.92);
 }
 
+.approval-frame-image-button {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  border-radius: 16px;
+  cursor: zoom-in;
+  line-height: 0;
+}
+
+.approval-frame-image-button:focus-visible {
+  outline: 2px solid rgba(146, 184, 154, 0.55);
+  outline-offset: 2px;
+}
+
 .approval-frame-image {
   width: 100%;
   aspect-ratio: 4 / 3;
@@ -647,6 +676,10 @@ code {
   border-radius: 16px;
   border: 1px solid var(--border);
   background: var(--bg-elevated);
+}
+
+.approval-frame-image-button .approval-frame-image {
+  display: block;
 }
 
 .approval-frame-meta {
@@ -779,6 +812,74 @@ select.field-input option {
 .info-value {
   word-break: break-all;
   color: var(--headline);
+}
+
+/* ── Frame preview lightbox ── */
+
+.frame-lightbox-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(12, 10, 8, 0.82);
+  backdrop-filter: blur(4px);
+}
+
+.frame-lightbox-dialog {
+  position: relative;
+  display: grid;
+  gap: 14px;
+  max-width: min(96vw, 1200px);
+  max-height: min(92vh, 900px);
+  padding: 16px;
+  border-radius: 22px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow);
+}
+
+.frame-lightbox-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 1;
+  border-radius: 999px;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  background: var(--surface-strong);
+  color: var(--headline);
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.88rem;
+}
+
+.frame-lightbox-close:hover {
+  background: var(--surface-muted);
+  border-color: var(--border-strong);
+}
+
+.frame-lightbox-image {
+  display: block;
+  max-width: 100%;
+  max-height: min(78vh, 760px);
+  width: auto;
+  height: auto;
+  margin: 0 auto;
+  object-fit: contain;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.frame-lightbox-caption {
+  margin: 0;
+  text-align: center;
+  font-size: 0.88rem;
+  color: var(--text-muted);
+  word-break: break-all;
 }
 
 /* ── Responsive ── */
