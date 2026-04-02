@@ -446,6 +446,12 @@ export default function App() {
     }
   }, [chunkDurationMinutes]);
 
+  const saveAllSettings = useCallback(async () => {
+    await saveChunkSettings();
+    await saveAISettings();
+    await saveSettings();
+  }, [saveChunkSettings, saveAISettings, saveSettings]);
+
   const formatDuration = (seconds: number) => {
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
@@ -773,26 +779,6 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <div className="hero-wrap">
-        <div className="app-frame">
-          <header className="hero">
-            <p className="hero-eyebrow">Open Source &middot; Private &middot; Context Aware</p>
-            <h1 className="hero-title">
-              Your AI,<br />
-              always <span>in the loop.</span>
-            </h1>
-            <p className="hero-copy">
-              Records your screen, tags what you do, and exposes that context to your favorite
-              models.
-            </p>
-            <div className="hero-meta">
-              <span className={`status-pill ${statusToneClass}`}>{statusLine}</span>
-              <span className={`status-pill ${remoteStatusToneClass}`}>Remote: {remoteStatusLine}</span>
-            </div>
-          </header>
-        </div>
-      </div>
-
       <div className="app-frame content-area">
         <div className="tab-list" role="tablist" aria-label="Context manager sections">
           <button
@@ -824,7 +810,6 @@ export default function App() {
         {activeTab === "controls" && (
           <section className="panel">
             <div className="section-heading">
-              <p className="section-kicker">Capture</p>
               <h2 className="section-title">Capture your desktop context</h2>
             </div>
 
@@ -917,7 +902,6 @@ export default function App() {
           <section className="panel panel-form">
             <div className="settings-stack">
               <div className="section-heading">
-                <p className="section-kicker">Capture</p>
                 <h2 className="section-title">Capture settings</h2>
               </div>
 
@@ -940,14 +924,8 @@ export default function App() {
                 New recordings rotate every {chunkDurationMinutes || 5} minute
                 {Math.abs(chunkDurationMinutes || 5) === 1 ? "" : "s"}. Default is 5 minutes.
               </p>
-              <div>
-                <button className="button button-primary" onClick={() => void saveChunkSettings()} type="button">
-                  Save Capture Settings
-                </button>
-              </div>
 
               <div className="section-heading">
-                <p className="section-kicker">Configuration</p>
                 <h2 className="section-title">AI settings</h2>
               </div>
 
@@ -970,8 +948,7 @@ export default function App() {
               </select>
               {!isLocalProvider && (
                 <p className="support-copy">
-                  Fireworks mode keeps using your existing <code>FIREWORKS_*</code> environment
-                  variables.
+                  Fireworks uses your existing <code>FIREWORKS_*</code> environment variables.
                 </p>
               )}
               {isLocalProvider && (
@@ -1028,14 +1005,8 @@ export default function App() {
                   </p>
                 </>
               )}
-              <div>
-                <button className="button button-primary" onClick={() => void saveAISettings()} type="button">
-                  Save AI Settings
-                </button>
-              </div>
 
               <div className="section-heading">
-                <p className="section-kicker">Connection</p>
                 <h2 className="section-title">Remote access</h2>
               </div>
 
@@ -1052,8 +1023,8 @@ export default function App() {
               </label>
               <p className={`support-copy ${remoteStatusToneClass}`}>Status: {remoteStatusLine}</p>
               <p className="support-copy">
-                Remote tool calls still respect the approval queue below. Keep the app open to
-                approve requests, or enable auto-approve while testing.
+                Remote tool calls respect the approval queue. Keep the app open to
+                approve requests or enable auto-approve.
               </p>
               {remoteAccessState.error && <p className="banner banner-warning">{remoteAccessState.error}</p>}
               {remoteAccessState.enabled && (
@@ -1073,15 +1044,12 @@ export default function App() {
                     </button>
                   </div>
                   <p className="support-copy">
-                    Use the endpoint above for Claude or any remote MCP client. The server
-                    advertises standard OAuth discovery, authorization, token, and dynamic client
-                    registration endpoints automatically.
+                    Use the endpoint above for Claude or any remote MCP client.
                   </p>
                 </div>
               )}
 
               <div className="section-heading">
-                <p className="section-kicker">Guardrails</p>
                 <h2 className="section-title">Approval settings</h2>
               </div>
 
@@ -1115,13 +1083,22 @@ export default function App() {
               />
 
               <div>
-                <button className="button button-primary" onClick={() => void saveSettings()} type="button">
+                <button className="button button-primary" onClick={() => void saveAllSettings()} type="button">
                   Save Settings
                 </button>
               </div>
             </div>
           </section>
         )}
+      </div>
+
+      <div className="app-status-bar">
+        <div className="app-frame">
+          <div className="hero-meta">
+            <span className={`status-pill ${statusToneClass}`}>{statusLine}</span>
+            <span className={`status-pill ${remoteStatusToneClass}`}>Remote: {remoteStatusLine}</span>
+          </div>
+        </div>
       </div>
     </div>
   );

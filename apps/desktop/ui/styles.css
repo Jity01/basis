@@ -63,6 +63,8 @@ code {
 
 .app-shell {
   min-height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
 
 .app-frame {
@@ -180,6 +182,14 @@ code {
 .content-area {
   padding-top: 28px;
   padding-bottom: 40px;
+  flex: 1;
+}
+
+.app-status-bar {
+  margin-top: auto;
+  border-top: 1px solid var(--border);
+  background: var(--bg-elevated);
+  padding: 16px 0 20px;
 }
 
 .tab-list {
