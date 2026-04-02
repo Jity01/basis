@@ -80,6 +80,16 @@ If a connector still fails, validate the server in this order:
 
 The MCP server now logs those auth and MCP steps directly, which makes it much easier to tell whether a failure is tunnel reachability, OAuth discovery, token exchange, or the authenticated MCP session itself.
 
+### MCP Browsing Tools
+
+The remote MCP server now exposes deterministic filesystem-backed browsing tools instead of the old model-backed `search_context` flow:
+
+- `list_days` — returns available days plus lightweight metadata such as chunk count and first/last chunk time
+- `get_day_index` — returns the raw `index.txt` contents and chunk keys for one day
+- `get_chunk_context` — returns one chunk's reconstructed summary, parsed `meta.json`, and frame images for a chunk key like `2026-04-01/16-35`
+
+This lets Claude drive the retrieval loop directly: inspect recent days, open a day's index, then zoom in on specific chunks as needed.
+
 ## How to Run Tests
 
 **Milestone 1:** Run `pnpm dev` — Electron window opens with "Context Manager" placeholder.
@@ -131,6 +141,12 @@ cd apps/desktop && electron .
 2. Build core: `pnpm --filter @context-manager/core build`
 3. Run `pnpm --filter @context-manager/core tag-test -- /path/to/recording.webm` or call `extractFrames` then `tagChunk` from code.
 4. Verify: non-empty summary text that references real on-screen content.
+
+**Deterministic MCP browse helper smoke test:**
+
+1. Build core: `pnpm --filter @context-manager/core build`
+2. Run `pnpm --filter @context-manager/core search-test`
+3. Verify it prints `Deterministic browse helper smoke test passed.`
 
 ## Upcoming Milestones
 - **Milestone 5:** Storage to `~/.context/YYYY/MM/DD/...`
