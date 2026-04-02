@@ -25,6 +25,7 @@ import type { ApprovalPayload, ApprovalSettings, ApprovalState, ApprovalRequest 
 
 let mainWindow: BrowserWindow | null = null;
 let writeStream: fs.WriteStream | null = null;
+let pendingWriteChain: Promise<void> = Promise.resolve();
 let stopIdleMonitor: (() => void) | null = null;
 let approvalPollTimer: ReturnType<typeof setInterval> | null = null;
 let lastApprovalSnapshot = "";
@@ -184,21 +185,134 @@ function maybeStartLiveProcessing(): void {
   });
 }
 
-function closeCurrentFile(): void {
-  if (writeStream) {
-    writeStream.end();
-    writeStream = null;
+function waitForStreamFinish(stream: fs.WriteStream): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+
+    const cleanup = () => {
+      stream.removeListener("finish", onFinish);
+      stream.removeListener("close", onClose);
+      stream.removeListener("error", onError);
+    };
+
+    const settle = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      callback();
+    };
+
+    const onFinish = () => {
+      settle(resolve);
+    };
+
+    const onClose = () => {
+      settle(resolve);
+    };
+
+    const onError = (err: Error) => {
+      settle(() => reject(err));
+    };
+
+    stream.once("finish", onFinish);
+    stream.once("close", onClose);
+    stream.once("error", onError);
+  });
+}
+
+function writeChunkToStream(stream: fs.WriteStream, chunk: Buffer): Promise<void> {
+  if (stream.destroyed || stream.writableEnded) {
+    return Promise.reject(new Error("Recording file is already closing"));
   }
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let callbackDone = false;
+    let drainDone = false;
+    let needsDrain = false;
+
+    const cleanup = () => {
+      stream.removeListener("error", onError);
+      stream.removeListener("drain", onDrain);
+    };
+
+    const settle = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      callback();
+    };
+
+    const maybeResolve = () => {
+      if (!callbackDone) return;
+      if (!needsDrain || drainDone) {
+        settle(resolve);
+      }
+    };
+
+    const onError = (err: Error) => {
+      settle(() => reject(err));
+    };
+
+    const onDrain = () => {
+      drainDone = true;
+      maybeResolve();
+    };
+
+    stream.once("error", onError);
+    needsDrain = !stream.write(chunk, (err?: Error | null) => {
+      if (err) {
+        settle(() => reject(err));
+        return;
+      }
+      callbackDone = true;
+      maybeResolve();
+    });
+
+    if (needsDrain) {
+      stream.once("drain", onDrain);
+      return;
+    }
+
+    drainDone = true;
+  });
+}
+
+function enqueueChunkWrite(chunk: Buffer): Promise<void> {
+  const priorWrites = pendingWriteChain.catch(() => {});
+  const nextWrite = priorWrites.then(() => {
+    if (!writeStream) {
+      throw new Error("No active recording file");
+    }
+    return writeChunkToStream(writeStream, chunk);
+  });
+  pendingWriteChain = nextWrite;
+  return nextWrite;
+}
+
+async function closeCurrentFile(): Promise<void> {
+  const stream = writeStream;
+  await pendingWriteChain.catch(() => {});
+  if (!stream) {
+    setCurrentFile(null);
+    emitProcessingStatus();
+    return;
+  }
+
+  writeStream = null;
+  stream.end();
+  await waitForStreamFinish(stream);
   setCurrentFile(null);
   emitProcessingStatus();
 }
 
-function openNewFile(chunkDurationMs: number): string {
-  closeCurrentFile();
+async function openNewFile(chunkDurationMs: number): Promise<string> {
+  await closeCurrentFile();
   ensureTmpDir();
   const filePath = getNextRecordingPath();
   writeChunkDurationMsForFile(filePath, chunkDurationMs);
   writeStream = fs.createWriteStream(filePath);
+  pendingWriteChain = Promise.resolve();
   setCurrentFile(filePath);
   emitProcessingStatus();
   return filePath;
@@ -521,20 +635,20 @@ export function setupIpc(): void {
   ipcMain.handle("start-recording", async () => {
     const chunkDurationMs = getChunkDurationMs();
     activeRecordingChunkDurationMs = chunkDurationMs;
-    const filePath = openNewFile(chunkDurationMs);
+    const filePath = await openNewFile(chunkDurationMs);
     return { success: true, filePath };
   });
 
-  ipcMain.on("recording-chunk", (_event, chunkPayload: unknown) => {
+  ipcMain.handle("recording-chunk", async (_event, chunkPayload: unknown) => {
     const chunk = coerceChunkToBuffer(chunkPayload);
-    if (!chunk || !writeStream) {
-      return;
+    if (!chunk) {
+      throw new Error("Invalid recording chunk payload");
     }
-    writeStream.write(chunk);
+    await enqueueChunkWrite(chunk);
   });
 
   ipcMain.handle("rotate-recording", async () => {
-    const filePath = openNewFile(activeRecordingChunkDurationMs ?? getChunkDurationMs());
+    const filePath = await openNewFile(activeRecordingChunkDurationMs ?? getChunkDurationMs());
     maybeStartLiveProcessing();
     emitProcessingStatus();
     return { filePath };
@@ -542,7 +656,7 @@ export function setupIpc(): void {
 
   ipcMain.handle("stop-recording", async () => {
     activeRecordingChunkDurationMs = null;
-    closeCurrentFile();
+    await closeCurrentFile();
     maybeStartLiveProcessing();
     return { success: true };
   });

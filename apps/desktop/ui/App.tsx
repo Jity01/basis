@@ -186,9 +186,7 @@ export default function App() {
       if (e.data.size === 0) return;
       const sendPromise = e.data
         .arrayBuffer()
-        .then((buf) => {
-          contextManager.sendRecordingChunk(buf);
-        })
+        .then((buf) => contextManager.sendRecordingChunk(buf))
         .catch((err) => {
           setError(err instanceof Error ? err.message : "Failed to read recorded chunk");
         })

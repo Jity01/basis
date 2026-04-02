@@ -7,7 +7,7 @@ interface ContextManagerAPI {
   stopRecording: () => Promise<{ success: boolean }>;
   rotateRecording: () => Promise<{ filePath: string }>;
   processNow: () => Promise<{ started: boolean }>;
-  sendRecordingChunk: (chunk: ArrayBuffer) => void;
+  sendRecordingChunk: (chunk: ArrayBuffer) => Promise<void>;
   getCurrentFile: () => Promise<string | null>;
   getUnprocessedFiles: () => Promise<string[]>;
   getProcessingStatus: () => Promise<{

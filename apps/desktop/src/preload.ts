@@ -7,7 +7,7 @@ contextBridge.exposeInMainWorld("contextManager", {
   rotateRecording: () => ipcRenderer.invoke("rotate-recording"),
   processNow: () => ipcRenderer.invoke("process-now"),
   sendRecordingChunk: (chunk: ArrayBuffer) =>
-    ipcRenderer.send("recording-chunk", Buffer.from(chunk)),
+    ipcRenderer.invoke("recording-chunk", Buffer.from(chunk)),
   getCurrentFile: () => ipcRenderer.invoke("get-current-file"),
   getUnprocessedFiles: () => ipcRenderer.invoke("get-unprocessed-files"),
   getProcessingStatus: () => ipcRenderer.invoke("get-processing-status"),
