@@ -13,6 +13,8 @@ interface ContextManagerAPI {
     currentChunk: number;
     totalChunks: number;
     pendingChunks: number;
+    visiblePendingChunks: number;
+    activeRecordingChunk: boolean;
     trigger: "idle" | "manual" | "live" | null;
   }>;
   onProcessingStatus: (callback: (status: {
@@ -20,6 +22,8 @@ interface ContextManagerAPI {
     currentChunk: number;
     totalChunks: number;
     pendingChunks: number;
+    visiblePendingChunks: number;
+    activeRecordingChunk: boolean;
     trigger: "idle" | "manual" | "live" | null;
   }) => void) => () => void;
   getChunkDurationMs: () => Promise<number>;

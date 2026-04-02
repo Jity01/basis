@@ -73,6 +73,8 @@ type ProcessingStatus = {
   currentChunk: number;
   totalChunks: number;
   pendingChunks: number;
+  visiblePendingChunks: number;
+  activeRecordingChunk: boolean;
   trigger: ProcessingTrigger;
 };
 
@@ -81,6 +83,8 @@ const processingState: ProcessingStatus = {
   currentChunk: 0,
   totalChunks: 0,
   pendingChunks: 0,
+  visiblePendingChunks: 0,
+  activeRecordingChunk: false,
   trigger: null,
 };
 
@@ -103,8 +107,18 @@ function countPendingChunks(): number {
   return getUnprocessedFiles().length;
 }
 
+function getActiveRecordingChunk(): boolean {
+  return getCurrentFile() !== null;
+}
+
+function countVisiblePendingChunks(): number {
+  return countPendingChunks() + (getActiveRecordingChunk() ? 1 : 0);
+}
+
 function emitProcessingStatus(): void {
   processingState.pendingChunks = countPendingChunks();
+  processingState.visiblePendingChunks = countVisiblePendingChunks();
+  processingState.activeRecordingChunk = getActiveRecordingChunk();
   if (mainWindow) {
     mainWindow.webContents.send("processing-status", { ...processingState });
   }
@@ -556,6 +570,8 @@ export function setupIpc(): void {
 
   ipcMain.handle("get-processing-status", () => {
     processingState.pendingChunks = countPendingChunks();
+    processingState.visiblePendingChunks = countVisiblePendingChunks();
+    processingState.activeRecordingChunk = getActiveRecordingChunk();
     return { ...processingState };
   });
 

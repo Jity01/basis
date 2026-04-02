@@ -16,6 +16,8 @@ contextBridge.exposeInMainWorld("contextManager", {
       currentChunk: number;
       totalChunks: number;
       pendingChunks: number;
+      visiblePendingChunks: number;
+      activeRecordingChunk: boolean;
       trigger: "idle" | "manual" | "live" | null;
     }) => void
   ) => {
@@ -26,6 +28,8 @@ contextBridge.exposeInMainWorld("contextManager", {
           currentChunk: number;
           totalChunks: number;
           pendingChunks: number;
+          visiblePendingChunks: number;
+          activeRecordingChunk: boolean;
           trigger: "idle" | "manual" | "live" | null;
         }
       );

@@ -7,6 +7,8 @@ type ProcessingStatus = {
   currentChunk: number;
   totalChunks: number;
   pendingChunks: number;
+  visiblePendingChunks: number;
+  activeRecordingChunk: boolean;
   trigger: "idle" | "manual" | "live" | null;
 };
 
@@ -62,6 +64,8 @@ export default function App() {
     currentChunk: 0,
     totalChunks: 0,
     pendingChunks: 0,
+    visiblePendingChunks: 0,
+    activeRecordingChunk: false,
     trigger: null,
   });
   const [remoteAccessState, setRemoteAccessState] = useState<RemoteAccessState>({
@@ -371,20 +375,45 @@ export default function App() {
     return `${m}:${s.toString().padStart(2, "0")}`;
   };
 
+  const formatChunkCount = (count: number) => `${count} chunk${count === 1 ? "" : "s"}`;
+
   const processingCurrent = Math.max(processingStatus.currentChunk, 1);
   const processingTotal = Math.max(processingStatus.totalChunks, processingCurrent);
+  const visiblePendingChunks = processingStatus.visiblePendingChunks;
 
   const statusLine = (() => {
     if (processingStatus.isProcessing) {
+      if (processingStatus.trigger === "live" && processingStatus.activeRecordingChunk) {
+        return `Processing chunk ${processingCurrent}/${processingTotal} - next chunk recording`;
+      }
       return `Processing chunk ${processingCurrent}/${processingTotal}`;
+    }
+    if (isRecording && processingStatus.activeRecordingChunk) {
+      if (processingStatus.pendingChunks > 0) {
+        return `Recording - ${formatChunkCount(visiblePendingChunks)} pending`;
+      }
+      return "Recording - 1 chunk in progress";
     }
     if (isRecording) {
       return "Recording";
     }
-    if (processingStatus.pendingChunks > 0) {
-      return `Idle - ${processingStatus.pendingChunks} chunks pending`;
+    if (visiblePendingChunks > 0) {
+      return `Idle - ${formatChunkCount(visiblePendingChunks)} pending`;
     }
     return "All caught up";
+  })();
+
+  const processNowLabel = (() => {
+    if (processingStatus.isProcessing) {
+      return `Processing chunk ${processingCurrent}/${processingTotal}...`;
+    }
+    if (processingStatus.pendingChunks > 0) {
+      return `Process ${formatChunkCount(processingStatus.pendingChunks)}`;
+    }
+    if (processingStatus.activeRecordingChunk) {
+      return "Waiting for current chunk";
+    }
+    return "Process Now";
   })();
 
   const remoteStatusLine = (() => {
@@ -539,9 +568,7 @@ export default function App() {
                 disabled={processingStatus.pendingChunks === 0 || processingStatus.isProcessing}
                 type="button"
               >
-                {processingStatus.isProcessing
-                  ? `Processing chunk ${processingCurrent}/${processingTotal}...`
-                  : "Process Now"}
+                {processNowLabel}
               </button>
 
               {isRecording && <span className="duration-pill">{formatDuration(duration)}</span>}
