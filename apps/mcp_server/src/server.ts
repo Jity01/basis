@@ -7,7 +7,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { mcpAuthRouter, getOAuthProtectedResourceMetadataUrl } from "@modelcontextprotocol/sdk/server/auth/router.js";
 import { requireBearerAuth } from "@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js";
 import { CONTEXT_ROOT } from "@context-manager/config";
-import { findRelevantPaths, loadResults, readAISettings } from "@context-manager/core";
+import { getChunkContext, getDayIndex, listDays } from "@context-manager/core";
 import { z } from "zod";
 import {
   getApprovalSettings,
@@ -33,6 +33,15 @@ type McpSession = {
 
 const mcpSessions: Record<string, McpSession> = {};
 const authRouters = new Map<string, RequestHandler>();
+const DEFAULT_LIST_DAYS_LIMIT = 14;
+
+type TextToolContent = { type: "text"; text: string };
+type ImageToolContent = { type: "image"; data: string; mimeType: string };
+type ToolContent = TextToolContent | ImageToolContent;
+type ToolResult = {
+  content: ToolContent[];
+  isError?: boolean;
+};
 
 function getBaseUrl(req: Request): string {
   const forwardedProto = String(req.headers["x-forwarded-proto"] || "")
@@ -47,6 +56,82 @@ function sendJson(res: Response, statusCode: number, payload: unknown): void {
   res.status(statusCode).json(payload);
 }
 
+function makeTextResult(text: string, isError = false): ToolResult {
+  return {
+    content: [{ type: "text", text }],
+    ...(isError ? { isError: true } : {}),
+  };
+}
+
+async function approveOrError(label: string, preview: string): Promise<ToolResult | null> {
+  const approval = await requestApproval(label, preview || "(no content)");
+  if (approval.status === "rejected") {
+    return makeTextResult("User declined to share this context.", true);
+  }
+  if (approval.status === "timeout") {
+    return makeTextResult("Request timed out.", true);
+  }
+  return null;
+}
+
+function formatListDaysPreview(
+  days: Array<{
+    date: string;
+    chunkCount: number;
+    firstChunkTime: string | null;
+    lastChunkTime: string | null;
+    hasIndex: boolean;
+  }>
+): string {
+  if (days.length === 0) {
+    return "No stored context days found.";
+  }
+  return [
+    "Days:",
+    ...days.map((day) => {
+      const range =
+        day.firstChunkTime && day.lastChunkTime
+          ? `${day.firstChunkTime} - ${day.lastChunkTime}`
+          : "no chunk times";
+      return `- ${day.date} | chunks=${day.chunkCount} | range=${range} | index=${day.hasIndex ? "yes" : "no"}`;
+    }),
+  ].join("\n");
+}
+
+function formatDayIndexPreview(day: {
+  date: string;
+  chunkCount: number;
+  chunkKeys: string[];
+  indexText: string;
+}): string {
+  return [
+    `Date: ${day.date}`,
+    `Chunk count: ${day.chunkCount}`,
+    `Chunk keys: ${day.chunkKeys.length > 0 ? day.chunkKeys.join(", ") : "(none)"}`,
+    "Index:",
+    day.indexText || "(missing index.txt)",
+  ].join("\n");
+}
+
+function formatChunkContextPreview(chunk: {
+  chunkKey: string;
+  summaryText: string;
+  meta: Record<string, unknown> | null;
+  frames: Array<{ name: string; mimeType: string }>;
+}): string {
+  return [
+    `Chunk: ${chunk.chunkKey}`,
+    "Summary:",
+    chunk.summaryText,
+    "Meta:",
+    chunk.meta ? JSON.stringify(chunk.meta, null, 2) : "(missing meta.json)",
+    "Frames:",
+    chunk.frames.length > 0
+      ? chunk.frames.map((frame) => `- ${frame.name} (${frame.mimeType})`).join("\n")
+      : "(none)",
+  ].join("\n");
+}
+
 function createMcpServer(): McpServer {
   const server = new McpServer({
     name: "context-manager-mcp-server",
@@ -54,75 +139,159 @@ function createMcpServer(): McpServer {
   });
 
   server.registerTool(
-    "search_context",
+    "list_days",
     {
       description:
-        "Searches local context chunks via the configured AI provider and returns matched summary text with frames.",
+        "Lists available context days with lightweight metadata such as chunk counts and time ranges.",
       inputSchema: {
-        query: z.string().describe("Natural language query to match against indexed chunk summaries."),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(100)
+          .optional()
+          .describe("Optional maximum number of days to return (defaults to 14)."),
         contextRoot: z
           .string()
           .optional()
           .describe("Optional override for context root directory (defaults to CONTEXT_ROOT)."),
       },
     },
-    async ({ query, contextRoot }) => {
-      return await runSearchContext({ query, contextRoot });
+    async ({ limit, contextRoot }) => {
+      return await runListDays({ limit, contextRoot });
+    }
+  );
+
+  server.registerTool(
+    "get_day_index",
+    {
+      description:
+        "Returns one day's index.txt content plus chunk metadata for deterministic browsing.",
+      inputSchema: {
+        date: z.string().describe("Day to inspect, formatted as YYYY-MM-DD."),
+        contextRoot: z
+          .string()
+          .optional()
+          .describe("Optional override for context root directory (defaults to CONTEXT_ROOT)."),
+      },
+    },
+    async ({ date, contextRoot }) => {
+      return await runGetDayIndex({ date, contextRoot });
+    }
+  );
+
+  server.registerTool(
+    "get_chunk_context",
+    {
+      description:
+        "Returns one chunk's reconstructed summary, metadata, and frame images for a specific chunk key.",
+      inputSchema: {
+        chunkKey: z
+          .string()
+          .describe("Chunk key to inspect, formatted as YYYY-MM-DD/HH-MM."),
+        contextRoot: z
+          .string()
+          .optional()
+          .describe("Optional override for context root directory (defaults to CONTEXT_ROOT)."),
+      },
+    },
+    async ({ chunkKey, contextRoot }) => {
+      return await runGetChunkContext({ chunkKey, contextRoot });
     }
   );
 
   return server;
 }
 
-async function runSearchContext(args: unknown): Promise<{
-  content: Array<{ type: "text"; text: string }>;
-  isError?: boolean;
-}> {
+async function runListDays(args: unknown): Promise<ToolResult> {
   if (!args || typeof args !== "object") {
-    throw new Error("search_context requires an arguments object.");
+    throw new Error("list_days requires an arguments object.");
   }
-  const query = String((args as { query?: unknown }).query || "").trim();
+  const limitInput = (args as { limit?: unknown }).limit;
+  const contextRootInput = String((args as { contextRoot?: unknown }).contextRoot || "").trim();
+  const contextRoot = contextRootInput || CONTEXT_ROOT;
+  const limit =
+    typeof limitInput === "number" && Number.isFinite(limitInput)
+      ? Math.max(1, Math.trunc(limitInput))
+      : DEFAULT_LIST_DAYS_LIMIT;
+
+  const days = await listDays(contextRoot, limit);
+  const approvalError = await approveOrError("Share context day list", formatListDaysPreview(days));
+  if (approvalError) {
+    return approvalError;
+  }
+
+  return makeTextResult(JSON.stringify({ days }, null, 2));
+}
+
+async function runGetDayIndex(args: unknown): Promise<ToolResult> {
+  if (!args || typeof args !== "object") {
+    throw new Error("get_day_index requires an arguments object.");
+  }
+  const date = String((args as { date?: unknown }).date || "").trim();
   const contextRootInput = String((args as { contextRoot?: unknown }).contextRoot || "").trim();
   const contextRoot = contextRootInput || CONTEXT_ROOT;
 
-  if (!query) {
-    throw new Error("search_context requires a non-empty query.");
+  if (!date) {
+    throw new Error("get_day_index requires a non-empty date.");
   }
 
-  const relevantPaths = await findRelevantPaths(query, contextRoot, readAISettings());
-  const formatted = await loadResults(relevantPaths);
-  const approval = await requestApproval(query, formatted || "(no matching summaries found)");
-
-  if (approval.status === "rejected") {
-    return {
-      content: [
-        {
-          type: "text",
-          text: "User declined to share context for this query.",
-        },
-      ],
-      isError: true,
-    };
+  const day = await getDayIndex(date, contextRoot);
+  const approvalError = await approveOrError(`Share context day ${day.date}`, formatDayIndexPreview(day));
+  if (approvalError) {
+    return approvalError;
   }
 
-  if (approval.status === "timeout") {
-    return {
-      content: [
-        {
-          type: "text",
-          text: "Request timed out.",
-        },
-      ],
-      isError: true,
-    };
+  return makeTextResult(JSON.stringify(day, null, 2));
+}
+
+async function runGetChunkContext(args: unknown): Promise<ToolResult> {
+  if (!args || typeof args !== "object") {
+    throw new Error("get_chunk_context requires an arguments object.");
   }
+  const chunkKey = String((args as { chunkKey?: unknown }).chunkKey || "").trim();
+  const contextRootInput = String((args as { contextRoot?: unknown }).contextRoot || "").trim();
+  const contextRoot = contextRootInput || CONTEXT_ROOT;
+
+  if (!chunkKey) {
+    throw new Error("get_chunk_context requires a non-empty chunkKey.");
+  }
+
+  const chunk = await getChunkContext(chunkKey, contextRoot);
+  const approvalError = await approveOrError(
+    `Share chunk ${chunk.chunkKey}`,
+    formatChunkContextPreview({
+      chunkKey: chunk.chunkKey,
+      summaryText: chunk.summaryText,
+      meta: chunk.meta,
+      frames: chunk.frames.map((frame) => ({ name: frame.name, mimeType: frame.mimeType })),
+    })
+  );
+  if (approvalError) {
+    return approvalError;
+  }
+
+  const textPayload = {
+    chunkKey: chunk.chunkKey,
+    date: chunk.date,
+    time: chunk.time,
+    summaryText: chunk.summaryText,
+    meta: chunk.meta,
+    frames: chunk.frames.map((frame) => ({
+      name: frame.name,
+      path: frame.path,
+      mimeType: frame.mimeType,
+    })),
+  };
 
   return {
     content: [
-      {
-        type: "text",
-        text: formatted || "(no matching summaries found)",
-      },
+      { type: "text", text: JSON.stringify(textPayload, null, 2) },
+      ...chunk.frames.map((frame) => ({
+        type: "image" as const,
+        data: frame.data,
+        mimeType: frame.mimeType,
+      })),
     ],
   };
 }
