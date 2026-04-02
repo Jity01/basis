@@ -34,7 +34,7 @@ type AISettings = {
   provider: "fireworks" | "local";
   localBaseUrl: string;
   localTaggingModel: string;
-  localSearchModel: string;
+  fireworksApiKey?: string;
 };
 
 type TabId = "controls" | "requests" | "settings";
@@ -48,7 +48,6 @@ const fallbackAISettings: AISettings = {
   provider: "fireworks",
   localBaseUrl: "http://127.0.0.1:11434/v1",
   localTaggingModel: "llava:7b",
-  localSearchModel: "qwen3:4b",
 };
 
 function formatFriendlyDate(dateText: string): string {
@@ -1032,9 +1031,31 @@ export default function App() {
                 <option value="local">Local (Ollama)</option>
               </select>
               {!isLocalProvider && (
-                <p className="support-copy">
-                  Fireworks uses your existing <code>FIREWORKS_*</code> environment variables.
-                </p>
+                <>
+                  <label className="field-label" htmlFor="fireworks-api-key">
+                    Fireworks API key
+                  </label>
+                  <input
+                    id="fireworks-api-key"
+                    className="field-input"
+                    type="password"
+                    autoComplete="off"
+                    spellCheck={false}
+                    placeholder="Paste key if not using FIREWORKS_API_KEY in the environment"
+                    value={aiSettings.fireworksApiKey ?? ""}
+                    onChange={(event) =>
+                      setAISettings((current) => ({
+                        ...current,
+                        fireworksApiKey: event.target.value,
+                      }))
+                    }
+                  />
+                  <p className="support-copy">
+                    Tagging uses <code>FIREWORKS_API_KEY</code> when set; otherwise the key above
+                    (saved in <code>ai-settings.json</code>). Optional env: <code>FIREWORKS_MODEL</code>,{" "}
+                    <code>FIREWORKS_BASE_URL</code>.
+                  </p>
+                </>
               )}
               {isLocalProvider && (
                 <>
@@ -1065,21 +1086,6 @@ export default function App() {
                       setAISettings((current) => ({
                         ...current,
                         localTaggingModel: event.target.value,
-                      }))
-                    }
-                  />
-                  <label className="field-label" htmlFor="ollama-search-model">
-                    Local search model
-                  </label>
-                  <input
-                    id="ollama-search-model"
-                    className="field-input"
-                    type="text"
-                    value={aiSettings.localSearchModel}
-                    onChange={(event) =>
-                      setAISettings((current) => ({
-                        ...current,
-                        localSearchModel: event.target.value,
                       }))
                     }
                   />

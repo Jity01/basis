@@ -13,14 +13,18 @@ const DEFAULT_FIREWORKS_BASE_URL = "https://api.fireworks.ai/inference/v1";
 const MIN_SECONDS_BETWEEN_REQUESTS = 70;
 let lastRequestAtMs = 0;
 
-function getApiKey(): string {
-  const key = process.env.FIREWORKS_API_KEY?.trim();
-  if (!key) {
-    throw new Error(
-      "Missing FIREWORKS_API_KEY."
-    );
+function getApiKey(settings?: AISettings): string {
+  const fromEnv = process.env.FIREWORKS_API_KEY?.trim();
+  if (fromEnv) {
+    return fromEnv;
   }
-  return key;
+  const fromSettings = settings?.fireworksApiKey?.trim();
+  if (fromSettings) {
+    return fromSettings;
+  }
+  throw new Error(
+    "Missing Fireworks API key. Set FIREWORKS_API_KEY in the environment or add it in Settings."
+  );
 }
 
 function getFireworksBaseUrl(): string {
@@ -116,10 +120,10 @@ function mimeForPath(filePath: string): "image/jpeg" | "image/png" | "image/gif"
 
 /**
  * Reads frame files as base64 and sends them to Fireworks Chat Completions (vision).
- * Requires `FIREWORKS_API_KEY`.
+ * API key: `FIREWORKS_API_KEY` env, else `settings.fireworksApiKey` from saved AI settings.
  *
  * Environment:
- * - `FIREWORKS_API_KEY` — required
+ * - `FIREWORKS_API_KEY` — optional if key is saved in Settings
  * - `FIREWORKS_MODEL` — optional, defaults to qwen3-vl-30b-a3b-instruct
  */
 type VisionContentPart =
@@ -142,7 +146,7 @@ function getTaggingHeaders(settings?: AISettings): Record<string, string> {
   }
   return {
     "Content-Type": "application/json",
-    Authorization: `Bearer ${getApiKey()}`,
+    Authorization: `Bearer ${getApiKey(settings)}`,
   };
 }
 

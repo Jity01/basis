@@ -58,18 +58,18 @@ interface ContextManagerAPI {
     provider: "fireworks" | "local";
     localBaseUrl: string;
     localTaggingModel: string;
-    localSearchModel: string;
+    fireworksApiKey?: string;
   }>;
   updateAISettings: (settings: {
     provider?: "fireworks" | "local";
     localBaseUrl?: string;
     localTaggingModel?: string;
-    localSearchModel?: string;
+    fireworksApiKey?: string;
   }) => Promise<{
     provider: "fireworks" | "local";
     localBaseUrl: string;
     localTaggingModel: string;
-    localSearchModel: string;
+    fireworksApiKey?: string;
   }>;
   getRemoteAccessState: () => Promise<{
     enabled: boolean;

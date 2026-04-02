@@ -8,7 +8,8 @@ export type AISettings = {
   provider: AIProvider;
   localBaseUrl: string;
   localTaggingModel: string;
-  localSearchModel: string;
+  /** Used when `FIREWORKS_API_KEY` is not set in the environment. */
+  fireworksApiKey?: string;
 };
 
 const AI_SETTINGS_FILE_NAME = "ai-settings.json";
@@ -18,7 +19,6 @@ export const DEFAULT_AI_SETTINGS: AISettings = {
   provider: "fireworks",
   localBaseUrl: DEFAULT_LOCAL_BASE_URL,
   localTaggingModel: "llava:7b",
-  localSearchModel: "qwen3:4b",
 };
 
 export function getAISettingsPath(): string {
@@ -42,13 +42,18 @@ function normalizeModel(value: unknown, fallback: string): string {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }
 
+function normalizeFireworksApiKey(value: unknown): string | undefined {
+  const trimmed = typeof value === "string" ? value.trim() : "";
+  return trimmed || undefined;
+}
+
 function normalizeAISettings(value: unknown): AISettings {
   const raw = (value && typeof value === "object" ? value : {}) as Partial<AISettings>;
   return {
     provider: normalizeProvider(raw.provider),
     localBaseUrl: normalizeLocalBaseUrl(raw.localBaseUrl),
     localTaggingModel: normalizeModel(raw.localTaggingModel, DEFAULT_AI_SETTINGS.localTaggingModel),
-    localSearchModel: normalizeModel(raw.localSearchModel, DEFAULT_AI_SETTINGS.localSearchModel),
+    fireworksApiKey: normalizeFireworksApiKey(raw.fireworksApiKey),
   };
 }
 

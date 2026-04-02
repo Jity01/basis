@@ -61,7 +61,7 @@ contextBridge.exposeInMainWorld("contextManager", {
     provider?: "fireworks" | "local";
     localBaseUrl?: string;
     localTaggingModel?: string;
-    localSearchModel?: string;
+    fireworksApiKey?: string;
   }) => ipcRenderer.invoke("update-ai-settings", settings),
   setRemoteAccessEnabled: (enabled: boolean) => ipcRenderer.invoke("set-remote-access-enabled", enabled),
   onRemoteAccessState: (
