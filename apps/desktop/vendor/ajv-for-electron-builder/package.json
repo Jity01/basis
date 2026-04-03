@@ -1,0 +1,8 @@
+{
+  "name": "ajv-for-electron-builder",
+  "private": true,
+  "description": "Pinned Ajv 6 for electron-builder / @develar/schema-utils (see scripts/postinstall.js)",
+  "dependencies": {
+    "ajv": "6.12.6"
+  }
+}

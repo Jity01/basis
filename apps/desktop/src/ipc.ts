@@ -37,6 +37,10 @@ const TUNNEL_RESTART_DELAY_MS = 2_000;
 const SETTINGS_FILE_NAME = "settings.json";
 const CLOUDFLARED_URL_RE = /(https:\/\/[a-z0-9-]+\.trycloudflare\.com)/i;
 
+function cloudflaredBinary(): string {
+  return process.env.CONTEXT_MANAGER_CLOUDFLARED_BIN?.trim() || "cloudflared";
+}
+
 type ApprovalResolution = "approved" | "rejected";
 
 type RemoteAccessStatus = "disabled" | "starting" | "connected" | "reconnecting" | "error";
@@ -456,7 +460,7 @@ function startCloudflaredTunnel(): void {
   });
 
   const targetUrl = `http://${MCP_SERVER_HOST}:${MCP_SERVER_PORT}`;
-  const child = spawn("cloudflared", ["tunnel", "--url", targetUrl, "--no-autoupdate"], {
+  const child = spawn(cloudflaredBinary(), ["tunnel", "--url", targetUrl, "--no-autoupdate"], {
     stdio: ["ignore", "pipe", "pipe"],
   });
   cloudflaredProcess = child;

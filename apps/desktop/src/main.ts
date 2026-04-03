@@ -1,6 +1,8 @@
+import "./bundledBinPaths";
 import { app, BrowserWindow } from "electron";
 import * as path from "path";
 import { setupIpc, setMainWindow } from "./ipc";
+import { startBundledMcpServer, stopBundledMcpServer } from "./mcpServer";
 
 // Log to terminal so we can see main process is running
 console.log("[Electron] Main process starting...");
@@ -41,8 +43,13 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  startBundledMcpServer();
   setupIpc();
   createWindow();
+});
+
+app.on("will-quit", () => {
+  stopBundledMcpServer();
 });
 
 app.on("window-all-closed", () => {
