@@ -9,5 +9,5 @@ __pycache__
 issues.txt
 experiments/
 .pnpm-store/
-./apps/desktop/release/
-./apps/desktop/resources/
+apps/desktop/release/
+apps/desktop/resources/
