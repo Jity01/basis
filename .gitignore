@@ -7,3 +7,4 @@ dist-renderer
 .DS_Store
 __pycache__
 issues.txt
+experiments/
