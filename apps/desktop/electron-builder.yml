@@ -1,0 +1,56 @@
+# https://www.electron.build/configuration/configuration
+appId: com.basislabs.context-manager
+productName: Context Manager
+copyright: Copyright © Basis Labs
+# pnpm hoists electron to the repo root; pin the version for the packager.
+electronVersion: 33.4.11
+
+directories:
+  output: release
+  buildResources: build
+
+# Include app output + dependencies; exclude source and the MCP staging folder (MCP is in extraResources).
+files:
+  - "**/*"
+  - "!resources/**"
+  - "!src/**"
+  - "!ui/**"
+  - "!scripts/**"
+  - "!vite.config.ts"
+  - "!electron-builder.yml"
+  - "!tsconfig*.json"
+  - "!release/**"
+
+extraResources:
+  - from: resources/mcp-server
+    to: mcp-server
+    filter:
+      - "**/*"
+  - from: resources/ffmpeg-bin
+    to: ffmpeg-bin
+    filter:
+      - "**/*"
+  - from: resources/cloudflared-bin
+    to: cloudflared-bin
+    filter:
+      - "**/*"
+
+asar: true
+
+mac:
+  category: public.app-category.productivity
+  target:
+    - dmg
+    - zip
+
+win:
+  target:
+    - nsis
+
+linux:
+  target:
+    - AppImage
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true

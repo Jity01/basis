@@ -8,6 +8,14 @@ const execFileAsync = promisify(execFile);
 
 const DEFAULT_MAX_DIM = 1568;
 
+function ffmpegBin(): string {
+  return process.env.CONTEXT_MANAGER_FFMPEG_BIN?.trim() || "ffmpeg";
+}
+
+function ffprobeBin(): string {
+  return process.env.CONTEXT_MANAGER_FFPROBE_BIN?.trim() || "ffprobe";
+}
+
 /** Latest `extractFrames` output: `~/.context/.tmp/extracted-frames/` (overwritten each run). */
 export const EXTRACTED_FRAMES_DIR = path.join(
   CONTEXT_ROOT,
@@ -73,7 +81,7 @@ async function probeDurationViaFfmpegDecodeToNull(
 ): Promise<number | null> {
   try {
     const { stderr } = await execFileAsync(
-      "ffmpeg",
+      ffmpegBin(),
       ["-hide_banner", "-i", videoPath, "-f", "null", "-"],
       { maxBuffer: 50 * 1024 * 1024, encoding: "utf8" }
     );
@@ -102,7 +110,7 @@ function wrapFfmpegError(err: unknown): Error {
     const code = (err as { code?: string }).code;
     if (code === "ENOENT") {
       return new Error(
-        "ffmpeg/ffprobe not found. Install ffmpeg (e.g. brew install ffmpeg)."
+        "ffmpeg/ffprobe not found. Install ffmpeg (e.g. brew install ffmpeg), or use the packaged desktop app which bundles them."
       );
     }
   }
@@ -111,7 +119,7 @@ function wrapFfmpegError(err: unknown): Error {
 
 async function probeDurationSeconds(videoPath: string): Promise<number> {
   const { stdout } = await execFileAsync(
-    "ffprobe",
+    ffprobeBin(),
     [
       "-v",
       "error",
@@ -131,7 +139,7 @@ async function probeDurationSeconds(videoPath: string): Promise<number> {
   // WebM from MediaRecorder often has format duration N/A; ffmpeg -i still reports Duration on stderr.
   try {
     await execFileAsync(
-      "ffmpeg",
+      ffmpegBin(),
       ["-hide_banner", "-i", videoPath],
       { maxBuffer: 1024 * 1024 }
     );
@@ -168,7 +176,7 @@ async function runFfmpegFrameAt(
 ): Promise<void> {
   const vf = scaleFilterLongestEdge(maxDim);
   await execFileAsync(
-    "ffmpeg",
+    ffmpegBin(),
     [
       "-hide_banner",
       "-loglevel",

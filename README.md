@@ -34,7 +34,7 @@ context-manager/
 
 - **Node.js** 18+
 - **pnpm** 9.x (`npm install -g pnpm`)
-- **ffmpeg** (includes `ffmpeg` and `ffprobe` on `PATH`) — used for frame extraction. For local development on macOS: `brew install ffmpeg`. The MVP assumes ffmpeg is installed; it is not bundled.
+- **ffmpeg** — used for frame extraction. **Development:** install `ffmpeg` and `ffprobe` on your `PATH` (e.g. macOS: `brew install ffmpeg`). **Packaged desktop app:** `pnpm --filter @context-manager/desktop dist` / `dist:dir` runs scripts that stage `ffmpeg`, `ffprobe` (via [ffmpeg-static](https://www.npmjs.com/package/ffmpeg-static) / [ffprobe-static](https://www.npmjs.com/package/ffprobe-static)), and `cloudflared` (pinned release from [Cloudflare’s GitHub](https://github.com/cloudflare/cloudflared/releases)) into the app bundle; the Electron main process sets `CONTEXT_MANAGER_*` env vars so processing and remote access do not rely on system installs. Redistributing those binaries may be subject to their respective licenses (ffmpeg build license, cloudflared license, etc.).
 - **Fireworks** or **Ollama**
 - Fireworks mode uses `FIREWORKS_API_KEY` and the existing optional `FIREWORKS_BASE_URL` / `FIREWORKS_MODEL` env vars.
 - Local mode uses Ollama running on `http://127.0.0.1:11434` and the app stores a normalized OpenAI-compatible base URL such as `http://127.0.0.1:11434/v1`.
@@ -51,6 +51,24 @@ pnpm dev
 ```
 
 This opens an Electron window with the Context Manager placeholder UI. Imports from `@context-manager/core` and `@context-manager/config` work without errors (check the terminal for logs).
+
+## Desktop packaging
+
+From the repo root, after `pnpm install`:
+
+```bash
+# Unpacked app (fast to iterate; output under apps/desktop/release/)
+pnpm --filter @context-manager/desktop dist:dir
+
+# Platform installers (DMG / ZIP on macOS, per apps/desktop/electron-builder.yml)
+pnpm --filter @context-manager/desktop dist
+```
+
+`pnpm install` runs a small **postinstall** that installs a pinned Ajv 6 under `apps/desktop/vendor/ajv-for-electron-builder` (via `npm ci`) and symlinks it for `electron-builder`. **npm** must be on your PATH for that step.
+
+**Bundled binaries (packaged app only):** `build:desktop` runs `build:binaries`, which stages `ffmpeg`, `ffprobe`, and `cloudflared` under `apps/desktop/resources/` (gitignored) before `electron-builder` packs them into `extraResources`. Dev mode (`pnpm dev`) does not set these; use a system `ffmpeg` / `cloudflared` on `PATH` as usual.
+
+**MCP server:** In production (including packaged apps), the Electron main process starts the bundled MCP HTTP server. In `pnpm dev`, the MCP server is still started by the dev script’s `concurrently` process.
 
 ## Claude Remote Connector
 
@@ -119,7 +137,7 @@ cd apps/desktop && electron .
 - **`packages/core/src/frames.ts`**
   - `extractFrames(videoPath, numFrames, maxDim?)` — uses ffmpeg to sample `numFrames` JPEGs at evenly spaced times (centered in equal duration slices), downscaled so the longest edge ≤ `maxDim` (default **1568**). Writes to **`~/.context/.tmp/extracted-frames/`** (overwrites each run; see `EXTRACTED_FRAMES_DIR`) and returns absolute paths in time order.
   - `selectRepresentativeFrames(framePaths, keep)` — picks `keep` paths using consecutive **file-size** deltas as a simple change signal; always includes the first and last frame when `keep >= 2`.
-- Requires **ffmpeg** on `PATH` (see Requirements).
+- Requires **ffmpeg** / **ffprobe** (see Requirements): on `PATH` in dev, or `CONTEXT_MANAGER_FFMPEG_BIN` / `CONTEXT_MANAGER_FFPROBE_BIN` when set by the packaged Electron app.
 
 **Manual test (Milestone 3):**
 

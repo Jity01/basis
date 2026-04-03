@@ -2,6 +2,11 @@ node_modules
 dist
 dist-main
 dist-renderer
+apps/desktop/release
+apps/desktop/resources/mcp-server
+apps/desktop/resources/ffmpeg-bin
+apps/desktop/resources/cloudflared-bin
+apps/desktop/vendor/ajv-for-electron-builder/node_modules
 *.log
 .env
 .DS_Store
