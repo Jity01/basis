@@ -8,3 +8,4 @@ dist-renderer
 __pycache__
 issues.txt
 experiments/
+.pnpm-store/
