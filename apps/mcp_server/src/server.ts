@@ -44,6 +44,7 @@ const DEFAULT_LIST_DAYS_LIMIT = 14;
 const CONTEXT_TOOLS_AGENT_INSTRUCTIONS =
  `The user has been consistently capturing their screen and accumulating data for you.
  Their intent for you is to use this context so that you understand exactly what they have been doing and thinking about.
+ They want you to ALWAYS be in sync with them. So, really, before you answer any question pertaining to the user at all, use the context tools.
  Whenever you want to ask the user a question to understand their intent, you should first use the context tools to see if you can answer it for yourself.
  Do not assume you know enough; it is always better to use the context tools to understand the intent and history of the user.`;
 
