@@ -1,10 +1,7 @@
-import * as dotenv from "dotenv";
+import "./loadRepoEnv";
 import * as fs from "fs/promises";
 import * as path from "path";
 import type { AISettings } from "./aiSettings";
-
-/** Load repo-root `.env` when running from compiled `dist/` (packages/core/dist). */
-dotenv.config({ path: path.join(__dirname, "../../../.env") });
 
 const DEFAULT_MODEL =
   process.env.FIREWORKS_MODEL?.trim() ||

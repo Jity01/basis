@@ -1,4 +1,3 @@
-import * as dotenv from "dotenv";
 import * as path from "path";
 import * as fs from "fs";
 import { randomBytes, timingSafeEqual } from "crypto";
@@ -15,8 +14,6 @@ import {
 import type { OAuthServerProvider, AuthorizationParams } from "@modelcontextprotocol/sdk/server/auth/provider.js";
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 import type { OAuthClientInformationFull, OAuthTokens } from "@modelcontextprotocol/sdk/shared/auth.js";
-
-dotenv.config({ path: path.join(__dirname, "../../../.env") });
 
 type LocalDebugConfig = {
   authToken: string;

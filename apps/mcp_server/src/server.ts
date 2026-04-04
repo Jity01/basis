@@ -1,5 +1,4 @@
-import * as dotenv from "dotenv";
-import * as path from "path";
+import "./loadEnv";
 import { randomUUID } from "crypto";
 import express, { type NextFunction, type Request, type RequestHandler, type Response } from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -25,8 +24,6 @@ import {
   updateApprovalSettings,
 } from "./approval";
 import { getAuthInfoForLocalRequest, oauthProvider } from "./auth";
-
-dotenv.config({ path: path.join(__dirname, "../../../.env") });
 
 const MCP_HOST = process.env.MCP_SERVER_HOST?.trim() || "127.0.0.1";
 const MCP_PORT = Number(process.env.MCP_SERVER_PORT || 4821);
