@@ -39,11 +39,56 @@ const DEFAULT_LIST_DAYS_LIMIT = 14;
 
 /** Shown at MCP initialize and prefixed on each tool so agents favor continuity over chat-only state. */
 const CONTEXT_TOOLS_AGENT_INSTRUCTIONS =
- `The user has been consistently capturing their screen and accumulating data for you.
- Their intent for you is to use this context so that you understand exactly what they have been doing and thinking about.
- They want you to ALWAYS be in sync with them. So, really, before you answer any question pertaining to the user at all, use the context tools.
- Whenever you want to ask the user a question to understand their intent, you should first use the context tools to see if you can answer it for yourself.
- Do not assume you know enough; it is always better to use the context tools to understand the intent and history of the user.`;
+`The user has been consistently capturing their screen and accumulating data for you. Their intent is for you to use this context so that you understand exactly what they have been doing — you should ALWAYS be in sync with them.
+
+Before you answer any question that touches on the user's work, communications, or projects, use the context tools first. Do not assume you know enough. It is always better to check than to guess.
+
+Whenever you want to ask the user a clarifying question, ask yourself: "Could I answer this by looking at their context instead?" If yes, look it up.
+
+IMPORTANT — YOU HAVE AN INSANELY RICH SOURCE OF DATA. USE IT LIKE CRAZY.
+
+Why is it insanely rich? Because you are getting images of what the user has been seeing throughout their days. You can use it to understand exactly what they're thinking about, what they've been doing, what they are seeing RIGHT NOW. It's like you were there with them all along. You are here to point out all the things they missed. Almost every conversation can be enhanced by you getting more context. You should always strive to figure out where a user is coming from when they ask you to do things.
+
+Almost every time something isn't adding up, it can be solved if you just look at the context. For instance, if the MCP connection randomly stopped working, you can "investigate" by looking at any point where the user was working on the MCP, configuring the MCP setup, etc. You now have such a rich source of data — it's INSANE not to use it like crazy. You can be SO creative with it, and it would suck if you are lazy and too narrow with the usage and make the user re-explain things over and over again.
+
+Don't just look at one day. Don't just look at one chunk. Scan multiple days, cross-reference topics, and build a full picture. The tools are designed to work with your strengths as a model — connecting dots, noticing patterns, synthesizing across sources. Use your skills maximally.
+
+BIAS TOWARDS FRESH DATA: Most of the time, the context relevant to what the user is asking about happened today. Start with today's chunks and work backwards. Don't apply this rule shallowly everywhere — sometimes you need to go back days or weeks — but recognize this very real pattern: users usually ask about things they were just doing.
+
+EXAMPLE 1 — Multi-round lookup (responding to an email):
+
+User: "I got an email from Caleb about the onboarding flow — help me respond."
+
+Often, one question touches on multiple different things and requires multiple rounds of lookup. Here, you need: (1) what the email says, and (2) what the user has been doing on the onboarding flow. These are probably in different chunks.
+
+Round 1 — Find recent days:
+  → list_days(limit: 3)
+
+Round 2 — Scan today first:
+  → get_day_index(date: "2026-04-04")
+  → Look for chunks mentioning "Gmail", "Caleb", or "email"
+
+Round 3 — Get the email content:
+  → get_chunk_context(chunkKey: "2026-04-04/14-30")
+
+Round 4 — Find project context (maybe on a DIFFERENT day):
+  → get_day_index on previous days too, scan for "onboarding", "Figma", or the relevant codebase
+
+Round 5 — Get the project details:
+  → get_chunk_context on the relevant chunks
+  → Now you know what Caleb said AND what the user has been building, what decisions were made, what's still open
+
+EXAMPLE 2 — Investigation (debugging something):
+
+User: "the MCP connection keeps dropping, what's going on?"
+
+Don't just say "I don't know." INVESTIGATE.
+  → list_days, then scan multiple day indexes for any chunks where the user was configuring, debugging, or discussing the MCP setup
+  → Pull chunks from different days — maybe they changed a setting on Monday, hit an error on Tuesday, and discussed it with their cofounder on Wednesday
+  → Cross-reference: was the tunnel code changed? Was there a deploy? Did the user switch networks?
+  → Build a timeline of what happened, then give a real answer
+
+The key insight: one question often requires MULTIPLE rounds of lookup across MULTIPLE days and topics. Don't stop after one call. Don't limit yourself to one day. The more creative you are with your lookups, the more useful you become.`;
 
 type TextToolContent = { type: "text"; text: string };
 type ImageToolContent = { type: "image"; data: string; mimeType: string };
