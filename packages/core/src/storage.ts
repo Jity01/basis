@@ -4,9 +4,9 @@ import { CONTEXT_ROOT } from "@context-manager/config";
 
 const FRAMES_DIR_NAME = "frames";
 const META_FILE_NAME = "meta.json";
-const DAILY_INDEX_FILE_NAME = "index.txt";
+/** Per-chunk summary; day rollup is assembled at read time in searcher (no `index.txt`). */
+export const SUMMARY_FILE_NAME = "summary.txt";
 const REQUIRED_REPRESENTATIVE_FRAMES = 5;
-const INDEX_SECTION_PATTERN = /\[(\d{2}:\d{2})\]\n([\s\S]*?)(?=\n\n\[\d{2}:\d{2}\]\n|$)/g;
 
 function pad2(n: number): string {
   return String(n).padStart(2, "0");
@@ -19,13 +19,6 @@ function chunkDirFromTimestamp(timestamp: Date): string {
   const hh = pad2(timestamp.getHours());
   const min = pad2(timestamp.getMinutes());
   return path.join(CONTEXT_ROOT, yyyy, mm, dd, `${hh}-${min}`);
-}
-
-function dayDirFromDate(date: Date): string {
-  const yyyy = String(date.getFullYear());
-  const mm = pad2(date.getMonth() + 1);
-  const dd = pad2(date.getDate());
-  return path.join(CONTEXT_ROOT, yyyy, mm, dd);
 }
 
 /** Write one processed chunk to `~/.context/YYYY/MM/DD/HH-MM/`. */
@@ -43,7 +36,11 @@ export async function storeChunk(
   const framesDir = path.join(chunkDir, FRAMES_DIR_NAME);
 
   await fs.mkdir(framesDir, { recursive: true });
-  await upsertDailyIndex(timestamp, summary);
+  await fs.writeFile(
+    path.join(chunkDir, SUMMARY_FILE_NAME),
+    `${summary.trim()}\n`,
+    "utf8"
+  );
   await fs.writeFile(
     path.join(chunkDir, META_FILE_NAME),
     `${JSON.stringify(meta, null, 2)}\n`,
@@ -60,39 +57,51 @@ export async function storeChunk(
   return chunkDir;
 }
 
-async function upsertDailyIndex(timestamp: Date, summary: string): Promise<void> {
-  const dayDir = dayDirFromDate(timestamp);
-  await fs.mkdir(dayDir, { recursive: true });
+const FAILED_DIR_NAME = ".failed";
 
-  const indexPath = path.join(dayDir, DAILY_INDEX_FILE_NAME);
-  const hh = pad2(timestamp.getHours());
-  const min = pad2(timestamp.getMinutes());
-  const key = `${hh}:${min}`;
+/** Move a failed raw `.webm` from `.tmp/` into `.failed/` with error metadata (does not delete). */
+export async function moveRawVideoToFailed(videoPath: string, err: unknown): Promise<void> {
+  const tmpDir = path.resolve(path.join(CONTEXT_ROOT, ".tmp"));
+  const failedRoot = path.resolve(path.join(CONTEXT_ROOT, FAILED_DIR_NAME));
+  const resolvedVideoPath = path.resolve(videoPath);
+  const resolvedMetaPath = path.resolve(`${videoPath}.meta.json`);
 
-  const sections = new Map<string, string>();
+  if (
+    resolvedVideoPath !== tmpDir &&
+    !resolvedVideoPath.startsWith(`${tmpDir}${path.sep}`)
+  ) {
+    throw new Error(
+      `Refusing to move file outside ${tmpDir}: ${resolvedVideoPath}`
+    );
+  }
+
+  await fs.mkdir(failedRoot, { recursive: true });
+  const destBase = `${Date.now()}_${path.basename(videoPath)}`;
+  const destVideo = path.join(failedRoot, destBase);
+
   try {
-    const existing = await fs.readFile(indexPath, "utf8");
-    let match: RegExpExecArray | null;
-    INDEX_SECTION_PATTERN.lastIndex = 0;
-    while ((match = INDEX_SECTION_PATTERN.exec(existing)) != null) {
-      sections.set(match[1], match[2].trim());
+    await fs.rename(resolvedVideoPath, destVideo);
+  } catch (e: unknown) {
+    if ((e as NodeJS.ErrnoException)?.code === "ENOENT") {
+      return;
     }
-  } catch (err: unknown) {
-    if ((err as NodeJS.ErrnoException)?.code !== "ENOENT") {
-      throw err;
+    throw e;
+  }
+
+  try {
+    await fs.rename(resolvedMetaPath, `${destVideo}.meta.json`);
+  } catch (e: unknown) {
+    if ((e as NodeJS.ErrnoException)?.code !== "ENOENT") {
+      throw e;
     }
   }
 
-  sections.set(key, summary.trim());
-
-  const sorted = Array.from(sections.entries()).sort((a, b) =>
-    a[0].localeCompare(b[0])
+  const message = err instanceof Error ? err.stack || err.message : String(err);
+  await fs.writeFile(
+    `${destVideo}.error.txt`,
+    `${new Date().toISOString()}\n${message}\n`,
+    "utf8"
   );
-  const indexContents =
-    sorted.length > 0
-      ? `${sorted.map(([k, v]) => `[${k}]\n${v}`).join("\n\n")}\n`
-      : "";
-  await fs.writeFile(indexPath, indexContents, "utf8");
 }
 
 /** Delete a raw recording file that lives under `~/.context/.tmp/`. */

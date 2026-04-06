@@ -1,16 +1,18 @@
 import * as fs from "fs/promises";
 import * as path from "path";
 import { CONTEXT_ROOT } from "@context-manager/config";
+import { SUMMARY_FILE_NAME } from "./storage";
 
 const DEFAULT_LIST_DAYS_LIMIT = 30;
-const INDEX_FILE_NAME = "index.txt";
 const META_FILE_NAME = "meta.json";
 const FRAMES_DIR_NAME = "frames";
 const DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 const CHUNK_DIR_RE = /^(\d{2})-(\d{2})$/;
 const CHUNK_KEY_RE = /^(\d{4})-(\d{2})-(\d{2})\/(\d{2})-(\d{2})$/;
 
-const INDEX_SECTION_PATTERN = /\[(\d{2}):(\d{2})\]\n([\s\S]*?)(?=\n\n\[\d{2}:\d{2}\]\n|$)/g;
+/** Exported for the legacy `index.txt` → `summary.txt` backfill script. */
+export const INDEX_SECTION_PATTERN =
+  /\[(\d{2}):(\d{2})\]\n([\s\S]*?)(?=\n\n\[\d{2}:\d{2}\]\n|$)/g;
 
 export type DaySummary = {
   date: string;
@@ -50,12 +52,6 @@ type ParsedDate = {
 type ParsedChunkKey = ParsedDate & {
   hour: string;
   minute: string;
-};
-
-type IndexEntry = {
-  time: string;
-  chunkKey: string;
-  summaryText: string;
 };
 
 async function readDirSafe(dirPath: string): Promise<import("fs").Dirent[]> {
@@ -138,38 +134,6 @@ function chunkKeyFromDateAndChunkDir(date: string, chunkDirName: string): string
   return `${date}/${match[1]}-${match[2]}`;
 }
 
-function parseIndexEntries(date: string, indexText: string): IndexEntry[] {
-  const out: IndexEntry[] = [];
-  INDEX_SECTION_PATTERN.lastIndex = 0;
-  let match: RegExpExecArray | null;
-  while ((match = INDEX_SECTION_PATTERN.exec(indexText)) != null) {
-    const hour = match[1]!;
-    const minute = match[2]!;
-    const summaryText = (match[3] || "").trim();
-    if (!summaryText) {
-      continue;
-    }
-    out.push({
-      time: `${hour}:${minute}`,
-      chunkKey: `${date}/${hour}-${minute}`,
-      summaryText,
-    });
-  }
-  return out;
-}
-
-function buildSummaryTextByChunkKey(date: string, indexText: string): Map<string, string> {
-  const out = new Map<string, string>();
-  for (const entry of parseIndexEntries(date, indexText)) {
-    out.set(entry.chunkKey, entry.summaryText);
-  }
-  return out;
-}
-
-function mergeSortedUnique(values: string[]): string[] {
-  return Array.from(new Set(values)).sort((a, b) => a.localeCompare(b));
-}
-
 function mimeTypeForFile(filePath: string): string {
   const ext = path.extname(filePath).toLowerCase();
   if (ext === ".png") {
@@ -194,27 +158,25 @@ async function listChunkDirNames(dayDir: string): Promise<string[]> {
 
 async function readDaySummary(date: string, contextRoot: string): Promise<DaySummary> {
   const dayDir = dayPathFromDate(date, contextRoot);
-  const [chunkDirNames, indexText] = await Promise.all([
-    listChunkDirNames(dayDir),
-    readTextFileSafe(path.join(dayDir, INDEX_FILE_NAME)),
-  ]);
-  const indexTimes = parseIndexEntries(date, indexText).map((entry) => entry.time);
-  const chunkTimes = chunkDirNames
-    .map((chunkDirName) => clockTimeFromChunkDirName(chunkDirName))
-    .filter((time): time is string => Boolean(time));
-  const allTimes = mergeSortedUnique([...chunkTimes, ...indexTimes]);
+  const chunkDirNames = await listChunkDirNames(dayDir);
+  const timesWithSummary: string[] = [];
+  for (const name of chunkDirNames) {
+    const text = (await readTextFileSafe(path.join(dayDir, name, SUMMARY_FILE_NAME))).trim();
+    if (!text) {
+      continue;
+    }
+    const t = clockTimeFromChunkDirName(name);
+    if (t) {
+      timesWithSummary.push(t);
+    }
+  }
 
   return {
     date,
-    chunkCount: mergeSortedUnique([
-      ...chunkDirNames
-        .map((chunkDirName) => chunkKeyFromDateAndChunkDir(date, chunkDirName))
-        .filter((chunkKey): chunkKey is string => Boolean(chunkKey)),
-      ...parseIndexEntries(date, indexText).map((entry) => entry.chunkKey),
-    ]).length,
-    firstChunkTime: allTimes[0] || null,
-    lastChunkTime: allTimes[allTimes.length - 1] || null,
-    hasIndex: indexText.trim().length > 0,
+    chunkCount: timesWithSummary.length,
+    firstChunkTime: timesWithSummary[0] || null,
+    lastChunkTime: timesWithSummary[timesWithSummary.length - 1] || null,
+    hasIndex: timesWithSummary.length > 0,
   };
 }
 
@@ -250,25 +212,43 @@ export async function listDays(
   return await Promise.all(newestFirstDates.map((date) => readDaySummary(date, contextRoot)));
 }
 
+async function buildDayIndexTextFromDisk(dayDir: string): Promise<string> {
+  const chunkDirNames = await listChunkDirNames(dayDir);
+  const parts: string[] = [];
+  for (const name of chunkDirNames) {
+    const text = (await readTextFileSafe(path.join(dayDir, name, SUMMARY_FILE_NAME))).trim();
+    if (!text) {
+      continue;
+    }
+    const clock = clockTimeFromChunkDirName(name);
+    if (!clock) {
+      continue;
+    }
+    parts.push(`[${clock}]\n${text}`);
+  }
+  return parts.length > 0 ? `${parts.join("\n\n")}\n` : "";
+}
+
 export async function getDayIndex(
   date: string,
   contextRoot: string = CONTEXT_ROOT
 ): Promise<DayIndex> {
   const normalizedDate = `${parseDate(date).year}-${parseDate(date).month}-${parseDate(date).day}`;
   const dayDir = dayPathFromDate(normalizedDate, contextRoot);
-  const [chunkDirNames, rawIndexText] = await Promise.all([
-    listChunkDirNames(dayDir),
-    readTextFileSafe(path.join(dayDir, INDEX_FILE_NAME)),
-  ]);
+  const chunkDirNames = await listChunkDirNames(dayDir);
+  const chunkKeys: string[] = [];
+  for (const name of chunkDirNames) {
+    const text = (await readTextFileSafe(path.join(dayDir, name, SUMMARY_FILE_NAME))).trim();
+    if (!text) {
+      continue;
+    }
+    const ck = chunkKeyFromDateAndChunkDir(normalizedDate, name);
+    if (ck) {
+      chunkKeys.push(ck);
+    }
+  }
 
-  const indexText = rawIndexText.trim();
-  const chunkKeys = mergeSortedUnique([
-    ...chunkDirNames
-      .map((chunkDirName) => chunkKeyFromDateAndChunkDir(normalizedDate, chunkDirName))
-      .filter((chunkKey): chunkKey is string => Boolean(chunkKey)),
-    ...parseIndexEntries(normalizedDate, indexText).map((entry) => entry.chunkKey),
-  ]);
-
+  const indexText = (await buildDayIndexTextFromDisk(dayDir)).trim();
   const summary = await readDaySummary(normalizedDate, contextRoot);
   return {
     ...summary,
@@ -286,16 +266,13 @@ export async function getChunkContext(
   const date = `${parsed.year}-${parsed.month}-${parsed.day}`;
   const time = `${parsed.hour}:${parsed.minute}`;
   const chunkDir = chunkPathFromKey(normalizedChunkKey, contextRoot);
-  const dayDir = dayPathFromDate(date, contextRoot);
 
-  const [indexText, metaText] = await Promise.all([
-    readTextFileSafe(path.join(dayDir, INDEX_FILE_NAME)),
+  const [summaryRaw, metaText] = await Promise.all([
+    readTextFileSafe(path.join(chunkDir, SUMMARY_FILE_NAME)),
     readTextFileSafe(path.join(chunkDir, META_FILE_NAME)),
   ]);
 
-  const summaryByChunkKey = buildSummaryTextByChunkKey(date, indexText);
-  const summaryText =
-    summaryByChunkKey.get(normalizedChunkKey) || "(missing matching summary section in index.txt)";
+  const summaryText = summaryRaw.trim() || "(missing summary.txt)";
 
   let meta: Record<string, unknown> | null = null;
   if (metaText.trim()) {

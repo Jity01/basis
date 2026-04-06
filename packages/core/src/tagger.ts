@@ -7,8 +7,6 @@ const DEFAULT_MODEL =
   process.env.FIREWORKS_MODEL?.trim() ||
   "accounts/fireworks/models/qwen3-vl-30b-a3b-instruct";
 const DEFAULT_FIREWORKS_BASE_URL = "https://api.fireworks.ai/inference/v1";
-const MIN_SECONDS_BETWEEN_REQUESTS = 70;
-let lastRequestAtMs = 0;
 
 function getApiKey(settings?: AISettings): string {
   const fromEnv = process.env.FIREWORKS_API_KEY?.trim();
@@ -28,43 +26,18 @@ function getFireworksBaseUrl(): string {
   return process.env.FIREWORKS_BASE_URL?.trim() || DEFAULT_FIREWORKS_BASE_URL;
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function waitForRateLimitWindow(settings?: AISettings): Promise<void> {
-  if (settings?.provider === "local") {
-    return;
-  }
-  if (lastRequestAtMs <= 0) {
-    return;
-  }
-
-  const elapsedSeconds = (Date.now() - lastRequestAtMs) / 1000;
-  const waitSeconds = Math.max(0, MIN_SECONDS_BETWEEN_REQUESTS - elapsedSeconds);
-  if (waitSeconds > 0) {
-    await sleep(waitSeconds * 1000);
-  }
-}
-
 function buildAnalysisPrompt(
   numFrames: number,
   startTime: string,
-  endTime: string,
-  rollingContext: string
+  endTime: string
 ): string {
-  const contextBlock =
-    rollingContext.trim().length > 0
-      ? `\n\nPrior context from the immediately preceding segment:\n${rollingContext.trim()}\n`
-      : "";
-
   return `You are a screen activity analyzer. Your job is to produce specific
 summaries of what a user is doing on their computer. These summaries will be stored
 and later searched by an AI agent to answer questions like "when did the user work on X?"
 or "what was the user trying to figure out about Y?" — so specificity matters.
 
 You are looking at ${numFrames} sequential screenshots from a screen recording,
-covering ${startTime} to ${endTime}, evenly spaced.${contextBlock}
+covering ${startTime} to ${endTime}, evenly spaced.
 
 INSTRUCTIONS:
 - Read and understand the actual text on screen carefully. Do not just rely on
@@ -94,10 +67,6 @@ the user is actually doing or thinking about. It contains zero searchable detail
 
 Write your summary as a single concise paragraph; do not be verbose. Keep your
 analysis to the minimum and more so describe what's happening.
-
-IMPORTANT: DO NOT REPEAT YOURSELF. If you've said something in the previous chunk,
-don't say it again in this chunk summary. Focus only on what is new and different in
-this chunk. If there absolutely aren't any new things, just do not say anything.
 `;
 }
 
@@ -151,16 +120,10 @@ export async function tagChunk(
   framePaths: string[],
   startTime: string,
   endTime: string,
-  rollingContext: string,
   settings?: AISettings
 ): Promise<string> {
   const numFrames = framePaths.length;
-  const promptText = buildAnalysisPrompt(
-    numFrames,
-    startTime,
-    endTime,
-    rollingContext
-  );
+  const promptText = buildAnalysisPrompt(numFrames, startTime, endTime);
 
   const content: VisionContentPart[] = [];
 
@@ -179,7 +142,6 @@ export async function tagChunk(
 
   let responseContent = "";
   try {
-    await waitForRateLimitWindow(settings);
     const response = await fetch(getTaggingUrl(settings), {
       method: "POST",
       headers: getTaggingHeaders(settings),
@@ -189,9 +151,6 @@ export async function tagChunk(
         messages: [{ role: "user", content }],
       }),
     });
-    if (settings?.provider !== "local") {
-      lastRequestAtMs = Date.now();
-    }
 
     if (!response.ok) {
       const body = await response.text();

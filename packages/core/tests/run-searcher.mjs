@@ -26,12 +26,13 @@ async function writeText(filePath, value) {
 
 try {
   await writeText(
-    path.join(tmpRoot, "2026", "04", "01", "index.txt"),
-    `[09:30]
-Working on the remote MCP connector approval flow.
-
-[16:35]
-Refining search replacement tools for day listing and chunk context retrieval.
+    path.join(tmpRoot, "2026", "04", "01", "09-30", "summary.txt"),
+    `Working on the remote MCP connector approval flow.
+`
+  );
+  await writeText(
+    path.join(tmpRoot, "2026", "04", "01", "16-35", "summary.txt"),
+    `Refining search replacement tools for day listing and chunk context retrieval.
 `
   );
   await writeJson(path.join(tmpRoot, "2026", "04", "01", "09-30", "meta.json"), {
@@ -52,9 +53,8 @@ Refining search replacement tools for day listing and chunk context retrieval.
   );
 
   await writeText(
-    path.join(tmpRoot, "2026", "03", "31", "index.txt"),
-    `[11:00]
-Reviewing Electron recording behavior and chunk rotation.
+    path.join(tmpRoot, "2026", "03", "31", "11-00", "summary.txt"),
+    `Reviewing Electron recording behavior and chunk rotation.
 `
   );
   await writeJson(path.join(tmpRoot, "2026", "03", "31", "11-00", "meta.json"), {

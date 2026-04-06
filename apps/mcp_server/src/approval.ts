@@ -213,7 +213,7 @@ function formatDayIndexPayload(payload: DayIndexApprovalPayload): string {
     `Chunk count: ${payload.chunkCount}`,
     `Chunk keys: ${payload.chunkKeys.length > 0 ? payload.chunkKeys.join(", ") : "(none)"}`,
     "Index:",
-    payload.indexText || "(missing index.txt)",
+    payload.indexText || "(no summaries for this day)",
   ].join("\n");
 }
 

@@ -120,7 +120,7 @@ The MCP server now logs those auth and MCP steps directly, which makes it much e
 The remote MCP server now exposes deterministic filesystem-backed browsing tools instead of the old model-backed `search_context` flow:
 
 - `list_days` — returns available days plus lightweight metadata such as chunk count and first/last chunk time
-- `get_day_index` — returns the raw `index.txt` contents and chunk keys for one day
+- `get_day_index` — returns a concatenated day index string (assembled from each chunk’s `summary.txt`) and chunk keys for one day
 - `get_chunk_context` — returns one chunk's reconstructed summary, parsed `meta.json`, and frame images for a chunk key like `2026-04-01/16-35`
 
 This lets Claude drive the retrieval loop directly: inspect recent days, open a day's index, then zoom in on specific chunks as needed.
@@ -167,8 +167,8 @@ cd apps/desktop && electron .
 ## Milestone 4: Tagging With Fireworks Or Ollama ✅
 
 - **`packages/core/src/tagger.ts`**
-  - `tagChunk(framePaths, startTime, endTime, rollingContext)` — reads each frame file as base64, sends the analysis prompt plus **all** frames as separate image blocks to either Fireworks or a local Ollama model using a chat-completions style API.
-  - Returns a **single paragraph** summary string (non-empty `rollingContext` is appended to the prompt as prior segment context).
+  - `tagChunk(framePaths, startTime, endTime, settings?)` — reads each frame file as base64, sends the analysis prompt plus **all** frames as separate image blocks to either Fireworks or a local Ollama model using a chat-completions style API.
+  - Returns a **single paragraph** summary string.
 
 **Manual test (Milestone 4):**
 

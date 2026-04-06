@@ -4,15 +4,17 @@ import {
   CONTEXT_ROOT,
   FRAMES_PER_CHUNK,
   FRAMES_TO_KEEP,
+  MAX_RETRIES,
+  PIPELINE_CONCURRENCY,
+  RETRY_DELAY_MS,
 } from "@context-manager/config";
 import { extractFrames, selectRepresentativeFrames } from "./frames";
 import { readChunkDurationMsForFile } from "./recorder";
-import { deleteRawVideo, storeChunk } from "./storage";
+import { deleteRawVideo, moveRawVideoToFailed, storeChunk } from "./storage";
 import { tagChunk } from "./tagger";
 import type { AISettings } from "./aiSettings";
 
 const TMP_DIR = path.join(CONTEXT_ROOT, ".tmp");
-const MAX_ROLLING_CONTEXT_GAP_MS = 30 * 60 * 1000;
 
 type BacklogItem = {
   filePath: string;
@@ -37,12 +39,8 @@ function pad2(n: number): string {
   return String(n).padStart(2, "0");
 }
 
-function isSameLocalDay(a: Date, b: Date): boolean {
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  );
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function hhmmss(d: Date): string {
@@ -121,9 +119,65 @@ async function getBacklogFiles(currentFile: string | null): Promise<BacklogItem[
   return backlog;
 }
 
+async function processOneChunk(
+  item: BacklogItem,
+  aiSettings?: AISettings
+): Promise<void> {
+  const chunkStart = item.chunkStart;
+  const chunkEnd = new Date(chunkStart.getTime() + item.chunkDurationMs);
+
+  const allFrames = await extractFrames(item.filePath, FRAMES_PER_CHUNK);
+  const summary = await tagChunk(
+    allFrames,
+    hhmmss(chunkStart),
+    hhmmss(chunkEnd),
+    aiSettings
+  );
+  const representativeFrames = selectRepresentativeFrames(allFrames, FRAMES_TO_KEEP);
+
+  await storeChunk(
+    chunkStart,
+    summary,
+    {
+      raw_video_file: path.basename(item.filePath),
+      raw_video_path: item.filePath,
+      chunk_start_iso: chunkStart.toISOString(),
+      chunk_end_iso: chunkEnd.toISOString(),
+      chunk_duration_ms: item.chunkDurationMs,
+      processed_at_iso: new Date().toISOString(),
+      frames_extracted: allFrames.length,
+      frames_stored: representativeFrames.length,
+    },
+    representativeFrames
+  );
+
+  await deleteRawVideo(item.filePath);
+}
+
+async function processChunkWithRetry(
+  item: BacklogItem,
+  aiSettings?: AISettings
+): Promise<boolean> {
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      await processOneChunk(item, aiSettings);
+      return true;
+    } catch (err: unknown) {
+      if (attempt === MAX_RETRIES) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(`[pipeline] chunk failed after retries: ${item.filePath}: ${message}`);
+        await moveRawVideoToFailed(item.filePath, err);
+        return false;
+      }
+      await sleep(RETRY_DELAY_MS * Math.pow(2, attempt));
+    }
+  }
+  return false;
+}
+
 /**
  * Process all unprocessed raw chunk files in `~/.context/.tmp/` (except current).
- * For each chunk: extract -> tag -> choose representative frames -> store -> delete raw file.
+ * Chunks are processed in parallel batches (concurrency-limited). Each chunk is independent.
  * Can be paused via `shouldContinue`; reruns will resume from remaining files.
  */
 export async function processBacklog(
@@ -133,72 +187,49 @@ export async function processBacklog(
 ): Promise<void> {
   const backlog = await getBacklogFiles(getCurrentFile());
   const total = backlog.length;
-  let rollingContext = "";
-  let previousChunkStart: Date | null = null;
   let completed = 0;
+  let completedChain: Promise<void> = Promise.resolve();
+  const incrementCompleted = (): Promise<number> => {
+    return new Promise((resolve, reject) => {
+      completedChain = completedChain
+        .then(() => {
+          completed += 1;
+          resolve(completed);
+        })
+        .catch(reject);
+    });
+  };
 
   options.onProgress?.({ phase: "start", total, completed });
 
-  for (const item of backlog) {
-    options.onProgress?.({
-      phase: "chunk-start",
-      total,
-      completed,
-      filePath: item.filePath,
-    });
-
-    const chunkStart = item.chunkStart;
-    const chunkEnd = new Date(chunkStart.getTime() + item.chunkDurationMs);
-
-    const shouldResetContext =
-      previousChunkStart === null ||
-      !isSameLocalDay(previousChunkStart, chunkStart) ||
-      chunkStart.getTime() - previousChunkStart.getTime() > MAX_ROLLING_CONTEXT_GAP_MS;
-    if (shouldResetContext) {
-      rollingContext = "";
-    }
-
-    const allFrames = await extractFrames(item.filePath, FRAMES_PER_CHUNK);
-    const summary = await tagChunk(
-      allFrames,
-      hhmmss(chunkStart),
-      hhmmss(chunkEnd),
-      rollingContext,
-      options.aiSettings
-    );
-    const representativeFrames = selectRepresentativeFrames(allFrames, FRAMES_TO_KEEP);
-
-    await storeChunk(
-      chunkStart,
-      summary,
-      {
-        raw_video_file: path.basename(item.filePath),
-        raw_video_path: item.filePath,
-        chunk_start_iso: chunkStart.toISOString(),
-        chunk_end_iso: chunkEnd.toISOString(),
-        chunk_duration_ms: item.chunkDurationMs,
-        processed_at_iso: new Date().toISOString(),
-        frames_extracted: allFrames.length,
-        frames_stored: representativeFrames.length,
-      },
-      representativeFrames
-    );
-
-    await deleteRawVideo(item.filePath);
-    rollingContext = summary.trim();
-    previousChunkStart = chunkStart;
-    completed += 1;
-    options.onProgress?.({
-      phase: "chunk-complete",
-      total,
-      completed,
-      filePath: item.filePath,
-    });
-
+  for (let i = 0; i < backlog.length; i += PIPELINE_CONCURRENCY) {
     if (!shouldContinue()) {
       options.onProgress?.({ phase: "paused", total, completed });
       return;
     }
+
+    const batch = backlog.slice(i, i + PIPELINE_CONCURRENCY);
+    await Promise.all(
+      batch.map(async (item) => {
+        options.onProgress?.({
+          phase: "chunk-start",
+          total,
+          completed,
+          filePath: item.filePath,
+        });
+
+        const ok = await processChunkWithRetry(item, options.aiSettings);
+        if (ok) {
+          const c = await incrementCompleted();
+          options.onProgress?.({
+            phase: "chunk-complete",
+            total,
+            completed: c,
+            filePath: item.filePath,
+          });
+        }
+      })
+    );
   }
 
   options.onProgress?.({ phase: "done", total, completed });

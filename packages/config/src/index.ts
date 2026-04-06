@@ -7,6 +7,12 @@ export const CHUNK_DURATION_MS = 300_000; // 5 minutes
 export const FRAMES_PER_CHUNK = 15;
 export const FRAMES_TO_KEEP = 5;
 
+/** Parallel Fireworks tagging calls in the chunk pipeline (safe default vs typical RPM limits). */
+export const PIPELINE_CONCURRENCY = 10;
+/** Per-chunk retries after a failed API/store step (attempts = MAX_RETRIES + 1). */
+export const MAX_RETRIES = 2;
+export const RETRY_DELAY_MS = 1000;
+
 /** Rolling live screen buffer (`.context/.hotbuffer/`) — decoupled from chunk pipeline. */
 export const HOT_BUFFER_CONFIG = {
   captureIntervalMs: 2000,

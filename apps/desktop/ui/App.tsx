@@ -494,9 +494,9 @@ export default function App() {
   const statusLine = (() => {
     if (processingStatus.isProcessing) {
       if (processingStatus.trigger === "live" && processingStatus.activeRecordingChunk) {
-        return `Processing chunk ${processingCurrent}/${processingTotal} - next chunk recording`;
+        return `Processed ${processingCurrent}/${processingTotal} chunks - next chunk recording`;
       }
-      return `Processing chunk ${processingCurrent}/${processingTotal}`;
+      return `Processed ${processingCurrent}/${processingTotal} chunks`;
     }
     if (isRecording && processingStatus.activeRecordingChunk) {
       if (processingStatus.pendingChunks > 0) {
@@ -515,7 +515,7 @@ export default function App() {
 
   const processNowLabel = (() => {
     if (processingStatus.isProcessing) {
-      return `Processing chunk ${processingCurrent}/${processingTotal}...`;
+      return `Processed ${processingCurrent}/${processingTotal} chunks...`;
     }
     if (processingStatus.pendingChunks > 0) {
       return `Process ${formatChunkCount(processingStatus.pendingChunks)}`;
