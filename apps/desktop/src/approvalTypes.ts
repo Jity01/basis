@@ -1,4 +1,4 @@
-export type ApprovalKind = "day_list" | "day_index" | "chunk_context";
+export type ApprovalKind = "day_list" | "day_index" | "chunk_context" | "live_context" | "live_frame" | "live_snapshots";
 
 export type DayListApprovalDay = {
   date: string;
@@ -37,10 +37,38 @@ export type ChunkContextApprovalPayload = {
   frames: ApprovalFrame[];
 };
 
+export type LiveContextApprovalPayload = {
+  kind: "live_context";
+  timelineText: string;
+};
+
+export type LiveFrameApprovalPayload = {
+  kind: "live_frame";
+  timestamp: number;
+  mimeType: string;
+  data: string;
+};
+
+export type LiveSnapshotItem = {
+  timestamp: number;
+  app: string;
+  windowTitle: string;
+  ocrText: string;
+  frame: ApprovalFrame;
+};
+
+export type LiveSnapshotsApprovalPayload = {
+  kind: "live_snapshots";
+  items: LiveSnapshotItem[];
+};
+
 export type ApprovalPayload =
   | DayListApprovalPayload
   | DayIndexApprovalPayload
-  | ChunkContextApprovalPayload;
+  | ChunkContextApprovalPayload
+  | LiveContextApprovalPayload
+  | LiveFrameApprovalPayload
+  | LiveSnapshotsApprovalPayload;
 
 export type ApprovalRequest = {
   id: string;

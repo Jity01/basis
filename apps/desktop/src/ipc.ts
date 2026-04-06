@@ -19,9 +19,23 @@ import {
   writeChunkSettings,
   writeChunkDurationMsForFile,
   type ChunkSettings,
+  startHotBuffer,
+  stopHotBuffer,
 } from "@context-manager/core";
 import { startIdleMonitor } from "./idle";
 import type { ApprovalPayload, ApprovalSettings, ApprovalState, ApprovalRequest } from "./approvalTypes";
+import { CONTEXT_ROOT, HOT_BUFFER_CONFIG, hotBufferDir } from "@context-manager/config";
+
+
+function resolveOcrBinaryPath(): string | undefined {
+  if (process.platform !== "darwin") {
+    return undefined;
+  }
+  if (app.isPackaged) {
+    return path.join(process.resourcesPath, "ocr-bin", "ocr-helper");
+  }
+  return path.join(__dirname, "..", "resources", "ocr-bin", "ocr-helper");
+}
 
 let mainWindow: BrowserWindow | null = null;
 let writeStream: fs.WriteStream | null = null;
@@ -612,6 +626,7 @@ export function setupIpc(): void {
   app.once("before-quit", () => {
     remoteAccessEnabled = false;
     stopCloudflaredTunnel();
+    stopHotBuffer();
   });
 
   const settings = readRemoteAccessSettings();
@@ -640,6 +655,15 @@ export function setupIpc(): void {
     const chunkDurationMs = getChunkDurationMs();
     activeRecordingChunkDurationMs = chunkDurationMs;
     const filePath = await openNewFile(chunkDurationMs);
+    startHotBuffer({
+      captureIntervalMs: HOT_BUFFER_CONFIG.captureIntervalMs,
+      maxAgeMs: HOT_BUFFER_CONFIG.maxAgeMs,
+      purgeIntervalMs: HOT_BUFFER_CONFIG.purgeIntervalMs,
+      resolution: { ...HOT_BUFFER_CONFIG.resolution },
+      jpegQuality: HOT_BUFFER_CONFIG.jpegQuality,
+      hotbufferDir: hotBufferDir(CONTEXT_ROOT),
+      ocrBinaryPath: resolveOcrBinaryPath(),
+    });
     return { success: true, filePath };
   });
 
@@ -660,6 +684,7 @@ export function setupIpc(): void {
 
   ipcMain.handle("stop-recording", async () => {
     activeRecordingChunkDurationMs = null;
+    stopHotBuffer();
     await closeCurrentFile();
     maybeStartLiveProcessing();
     return { success: true };

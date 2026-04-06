@@ -6,3 +6,4 @@ export * from "./storage";
 export * from "./searcher";
 export * from "./aiSettings";
 export * from "./chunkSettings";
+export * from "./hotbuffer";

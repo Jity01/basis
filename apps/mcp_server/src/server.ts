@@ -6,7 +6,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { mcpAuthRouter, getOAuthProtectedResourceMetadataUrl } from "@modelcontextprotocol/sdk/server/auth/router.js";
 import { requireBearerAuth } from "@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js";
 import { CONTEXT_ROOT } from "@context-manager/config";
-import { getChunkContext, getDayIndex, listDays } from "@context-manager/core";
+import { getChunkContext, getDayIndex, listDays, readHotBuffer, readHotFrame, readLatestSnapshots } from "@context-manager/core";
 import { z } from "zod";
 import {
   formatApprovalPayload,
@@ -21,6 +21,9 @@ import {
   type ChunkContextApprovalPayload,
   type DayIndexApprovalPayload,
   type DayListApprovalPayload,
+  type LiveContextApprovalPayload,
+  type LiveFrameApprovalPayload,
+  type LiveSnapshotsApprovalPayload,
   updateApprovalSettings,
 } from "./approval";
 import { getAuthInfoForLocalRequest, oauthProvider } from "./auth";
@@ -88,7 +91,21 @@ Don't just say "I don't know." INVESTIGATE.
   → Cross-reference: was the tunnel code changed? Was there a deploy? Did the user switch networks?
   → Build a timeline of what happened, then give a real answer
 
-The key insight: one question often requires MULTIPLE rounds of lookup across MULTIPLE days and topics. Don't stop after one call. Don't limit yourself to one day. The more creative you are with your lookups, the more useful you become.`;
+The key insight: one question often requires MULTIPLE rounds of lookup across MULTIPLE days and topics. Don't stop after one call. Don't limit yourself to one day. The more creative you are with your lookups, the more useful you become.
+
+REAL-TIME CONTEXT — get_latest_snapshots, get_live_context, get_live_frame
+
+You now have three additional tools for real-time screen context:
+
+get_latest_snapshots(count?) → Returns the last N screenshots (default 2) + their OCR text and app/window metadata. Images + text in one call. ~3-4K tokens for 2 snapshots.
+
+get_live_context(lastNSeconds?) → Returns an OCR text timeline for the last 30-60 seconds. Text only, no images. ~500-1500 tokens.
+
+get_live_frame(timestamp) → Returns a single screenshot by timestamp. Get timestamps from get_live_context. ~1500 tokens.
+
+These are real-time — no processing delay. The data comes from a local hot buffer that captures a screenshot every 2 seconds with local OCR.
+
+The existing tools (list_days, get_day_index, get_chunk_context) cover processed historical context. The new tools cover what's happening right now. Use whatever combination makes sense for the situation.`;
 
 type TextToolContent = { type: "text"; text: string };
 type ImageToolContent = { type: "image"; data: string; mimeType: string };
@@ -138,19 +155,42 @@ async function approvePayloadOrError(
 }
 
 function toolResultFromPayload(payload: ApprovalPayload): ToolResult {
-  if (payload.kind !== "chunk_context") {
-    return makeTextResult(formatApprovalPayload(payload));
+  switch (payload.kind) {
+    case "chunk_context":
+      return {
+        content: [
+          { type: "text", text: formatApprovalPayload(payload) },
+          ...payload.frames.map((frame) => ({
+            type: "image" as const,
+            data: frame.data,
+            mimeType: frame.mimeType,
+          })),
+        ],
+      };
+    case "live_frame":
+      return {
+        content: [{ type: "image", data: payload.data, mimeType: payload.mimeType }],
+      };
+    case "live_snapshots": {
+      const content: ToolContent[] = [];
+      for (const item of payload.items) {
+        const secsAgo = Math.round((Date.now() - item.timestamp) / 1000);
+        content.push({
+          type: "text",
+          text: `[${secsAgo}s ago] ${item.app} — ${item.windowTitle}
+OCR: ${item.ocrText}`,
+        });
+        content.push({
+          type: "image",
+          data: item.frame.data,
+          mimeType: item.frame.mimeType,
+        });
+      }
+      return { content };
+    }
+    default:
+      return makeTextResult(formatApprovalPayload(payload));
   }
-  return {
-    content: [
-      { type: "text", text: formatApprovalPayload(payload) },
-      ...payload.frames.map((frame) => ({
-        type: "image" as const,
-        data: frame.data,
-        mimeType: frame.mimeType,
-      })),
-    ],
-  };
 }
 
 function createMcpServer(): McpServer {
@@ -223,6 +263,86 @@ function createMcpServer(): McpServer {
     },
     async ({ chunkKey, contextRoot }) => {
       return await runGetChunkContext({ chunkKey, contextRoot });
+    }
+  );
+
+  server.registerTool(
+    "get_live_context",
+    {
+      description: `Returns the user's screen activity for the last 30-60 seconds as a timeline of OCR'd text with app and window info. Each entry is 2 seconds apart. Use this to understand what the user is CURRENTLY doing or JUST did — this is real-time, with no processing delay.
+
+Use get_live_context when:
+- The user says "help me with this" or references something on their screen
+- You want to understand the user's current task before responding
+- The user types "ct" (context trigger shortcut)
+
+Use get_day_index + get_chunk_context (not this tool) when:
+- The user references something from earlier today or previous days
+- You need to investigate project history across multiple days`,
+      inputSchema: {
+        lastNSeconds: z
+          .number()
+          .min(1)
+          .max(60)
+          .optional()
+          .describe("How many seconds of recent activity to return. Default 30. Max 60."),
+        contextRoot: z
+          .string()
+          .optional()
+          .describe("Optional override for context root directory (defaults to CONTEXT_ROOT)."),
+      },
+    },
+    async ({ lastNSeconds, contextRoot }) => {
+      return await runGetLiveContext({ lastNSeconds, contextRoot });
+    }
+  );
+
+  server.registerTool(
+    "get_live_frame",
+    {
+      description: `Returns a specific screenshot from the live buffer by timestamp. Use this when OCR text from get_live_context isn't sufficient — for example, when the user was looking at a diagram, UI mockup, image, or anything visual that OCR can't capture well. Get the timestamp from get_live_context results first.`,
+      inputSchema: {
+        timestamp: z.number().describe("Unix timestamp (ms) of the frame to retrieve."),
+        contextRoot: z
+          .string()
+          .optional()
+          .describe("Optional override for context root directory (defaults to CONTEXT_ROOT)."),
+      },
+    },
+    async ({ timestamp, contextRoot }) => {
+      return await runGetLiveFrame({ timestamp, contextRoot });
+    }
+  );
+
+  server.registerTool(
+    "get_latest_snapshots",
+    {
+      description: `Returns the most recent screenshots (default 2) from the live buffer, including both the images AND their OCR text/metadata. This is the fast path — use it when you want to immediately see what's on the user's screen right now without needing to browse the text timeline first.
+
+Use get_latest_snapshots when:
+- You want to quickly see what the user is looking at RIGHT NOW
+- The user says "look at this", "help me with this", "what do you see"
+- You need both visual and text context in one call
+
+Use get_live_context instead when:
+- You want to browse a longer timeline (30-60s) of activity as text
+- You're searching for a specific moment or app switch
+- You want to minimize token usage`,
+      inputSchema: {
+        count: z
+          .number()
+          .min(1)
+          .max(5)
+          .optional()
+          .describe("Number of most recent snapshots to return. Default 2. Max 5."),
+        contextRoot: z
+          .string()
+          .optional()
+          .describe("Optional override for context root directory (defaults to CONTEXT_ROOT)."),
+      },
+    },
+    async ({ count, contextRoot }) => {
+      return await runGetLatestSnapshots({ count, contextRoot });
     }
   );
 
@@ -321,6 +441,110 @@ async function runGetChunkContext(args: unknown): Promise<ToolResult> {
     return approval;
   }
 
+  return toolResultFromPayload(approval.approvedPayload);
+}
+
+async function runGetLiveContext(args: unknown): Promise<ToolResult> {
+  if (!args || typeof args !== "object") {
+    throw new Error("get_live_context requires an arguments object.");
+  }
+  const lastNRaw = (args as { lastNSeconds?: unknown }).lastNSeconds;
+  const lastN =
+    typeof lastNRaw === "number" && Number.isFinite(lastNRaw)
+      ? Math.min(60, Math.max(1, Math.trunc(lastNRaw)))
+      : 30;
+  const contextRootInput = String((args as { contextRoot?: unknown }).contextRoot || "").trim();
+  const contextRoot = contextRootInput || CONTEXT_ROOT;
+
+  const entries = readHotBuffer(lastN, contextRoot);
+  if (entries.length === 0) {
+    return makeTextResult("Hot buffer is empty — recording may not be active.");
+  }
+  const timeline = entries
+    .map((e) => {
+      const secsAgo = Math.round((Date.now() - e.timestamp) / 1000);
+      return `[${secsAgo}s ago] ${e.app} — ${e.windowTitle}\n${e.ocrText}`;
+    })
+    .join("\n\n---\n\n");
+  const timelineText = `Live context (last ${lastN}s, ${entries.length} snapshots):\n\n${timeline}`;
+  const payload: LiveContextApprovalPayload = {
+    kind: "live_context",
+    timelineText,
+  };
+  const approval = await approvePayloadOrError("Share live screen context", "Share live screen context", payload);
+  if ("content" in approval) {
+    return approval;
+  }
+  return toolResultFromPayload(approval.approvedPayload);
+}
+
+async function runGetLiveFrame(args: unknown): Promise<ToolResult> {
+  if (!args || typeof args !== "object") {
+    throw new Error("get_live_frame requires an arguments object.");
+  }
+  const ts = (args as { timestamp?: unknown }).timestamp;
+  if (typeof ts !== "number" || !Number.isFinite(ts)) {
+    throw new Error("get_live_frame requires a numeric timestamp.");
+  }
+  const contextRootInput = String((args as { contextRoot?: unknown }).contextRoot || "").trim();
+  const contextRoot = contextRootInput || CONTEXT_ROOT;
+
+  const frame = readHotFrame(ts, contextRoot);
+  if (!frame) {
+    return makeTextResult("Frame not found — it may have been purged.");
+  }
+  const payload: LiveFrameApprovalPayload = {
+    kind: "live_frame",
+    timestamp: ts,
+    mimeType: "image/jpeg",
+    data: frame.toString("base64"),
+  };
+  const approval = await approvePayloadOrError("Share live screenshot", "Share live screenshot", payload);
+  if ("content" in approval) {
+    return approval;
+  }
+  return toolResultFromPayload(approval.approvedPayload);
+}
+
+async function runGetLatestSnapshots(args: unknown): Promise<ToolResult> {
+  if (!args || typeof args !== "object") {
+    throw new Error("get_latest_snapshots requires an arguments object.");
+  }
+  const countRaw = (args as { count?: unknown }).count;
+  const count =
+    typeof countRaw === "number" && Number.isFinite(countRaw)
+      ? Math.min(5, Math.max(1, Math.trunc(countRaw)))
+      : 2;
+  const contextRootInput = String((args as { contextRoot?: unknown }).contextRoot || "").trim();
+  const contextRoot = contextRootInput || CONTEXT_ROOT;
+
+  const snapshots = readLatestSnapshots(count, contextRoot);
+  if (snapshots.length === 0) {
+    return makeTextResult("Hot buffer is empty — recording may not be active.");
+  }
+  const items = snapshots.map((snap) => ({
+    timestamp: snap.timestamp,
+    app: snap.app,
+    windowTitle: snap.windowTitle,
+    ocrText: snap.ocrText,
+    frame: {
+      name: `${snap.timestamp}.jpg`,
+      mimeType: "image/jpeg" as const,
+      data: snap.frameBuffer.toString("base64"),
+    },
+  }));
+  const payload: LiveSnapshotsApprovalPayload = {
+    kind: "live_snapshots",
+    items,
+  };
+  const approval = await approvePayloadOrError(
+    "Share live snapshots",
+    "Share live snapshots",
+    payload
+  );
+  if ("content" in approval) {
+    return approval;
+  }
   return toolResultFromPayload(approval.approvedPayload);
 }
 

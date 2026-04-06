@@ -7,6 +7,9 @@ import type {
   ChunkContextApprovalPayload,
   DayIndexApprovalPayload,
   DayListApprovalPayload,
+  LiveContextApprovalPayload,
+  LiveFrameApprovalPayload,
+  LiveSnapshotsApprovalPayload,
 } from "../src/approvalTypes";
 
 const contextManager = window.contextManager;
@@ -131,6 +134,12 @@ function approvalKindLabel(payload: ApprovalPayload): string {
       return "Day index";
     case "chunk_context":
       return "Chunk context";
+    case "live_context":
+      return "Live context";
+    case "live_frame":
+      return "Live frame";
+    case "live_snapshots":
+      return "Live snapshots";
   }
 }
 
@@ -849,6 +858,134 @@ export default function App() {
     </div>
   );
 
+  const renderLiveContextApproval = (request: ApprovalRequest, payload: LiveContextApprovalPayload) => (
+    <div className="approval-stack">
+      <div className="approval-chip-row">
+        <span className="approval-kind-pill">{approvalKindLabel(payload)}</span>
+        <span className="approval-helper-pill">Edits apply only to this approval</span>
+      </div>
+      <div className="approval-editor-block">
+        <label className="field-label" htmlFor={`approval-live-ctx-${request.id}`}>
+          Outgoing text
+        </label>
+        <textarea
+          id={`approval-live-ctx-${request.id}`}
+          className="field-input approval-textarea"
+          value={payload.timelineText}
+          onChange={(event) =>
+            updateApprovalDraft(request.id, {
+              ...payload,
+              timelineText: event.target.value,
+            })
+          }
+        />
+      </div>
+    </div>
+  );
+
+  const renderLiveFrameApproval = (request: ApprovalRequest, payload: LiveFrameApprovalPayload) => (
+    <div className="approval-stack">
+      <div className="approval-chip-row">
+        <span className="approval-kind-pill">{approvalKindLabel(payload)}</span>
+        <span className="approval-helper-pill">Approve to send this screenshot</span>
+      </div>
+      <div className="approval-date-hero">
+        <p className="approval-day-subtitle">Timestamp {payload.timestamp}</p>
+      </div>
+      <div className="approval-frame-grid">
+        <article className="approval-frame-card">
+          <button
+            type="button"
+            className="approval-frame-image-button"
+            onClick={() =>
+              setFrameLightbox({
+                src: frameDataUrl({ name: "live", mimeType: payload.mimeType, data: payload.data }),
+                title: "Live frame",
+              })
+            }
+            aria-label="View full size"
+          >
+            <img
+              className="approval-frame-image"
+              src={frameDataUrl({ name: "live", mimeType: payload.mimeType, data: payload.data })}
+              alt=""
+            />
+          </button>
+        </article>
+      </div>
+    </div>
+  );
+
+  const renderLiveSnapshotsApproval = (
+    request: ApprovalRequest,
+    payload: LiveSnapshotsApprovalPayload
+  ) => (
+    <div className="approval-stack">
+      <div className="approval-chip-row">
+        <span className="approval-kind-pill">{approvalKindLabel(payload)}</span>
+        <span className="approval-helper-pill">Remove snapshots you do not want to send</span>
+      </div>
+      <div className="approval-frame-header">
+        <span className="approval-count-pill">{payload.items.length} snapshot(s)</span>
+      </div>
+      <div className="approval-frame-grid">
+        {payload.items.length === 0 ? (
+          <p className="empty-state">No snapshots selected.</p>
+        ) : (
+          payload.items.map((item) => (
+            <article key={`${request.id}-${item.timestamp}`} className="approval-frame-card">
+              <button
+                className="approval-frame-remove"
+                onClick={() =>
+                  updateApprovalDraft(request.id, {
+                    ...payload,
+                    items: payload.items.filter((row) => row.timestamp !== item.timestamp),
+                  })
+                }
+                type="button"
+              >
+                Remove
+              </button>
+              <button
+                type="button"
+                className="approval-frame-image-button"
+                onClick={() =>
+                  setFrameLightbox({
+                    src: frameDataUrl(item.frame),
+                    title: `${item.app} @ ${item.timestamp}`,
+                  })
+                }
+                aria-label="View snapshot"
+              >
+                <img className="approval-frame-image" src={frameDataUrl(item.frame)} alt="" />
+              </button>
+              <div className="approval-frame-meta">
+                <span>{item.app}</span>
+                <span>{item.windowTitle}</span>
+              </div>
+              <label className="field-label" htmlFor={`approval-snap-ocr-${request.id}-${item.timestamp}`}>
+                OCR
+              </label>
+              <textarea
+                id={`approval-snap-ocr-${request.id}-${item.timestamp}`}
+                className="field-input approval-textarea approval-time-body-textarea"
+                value={item.ocrText}
+                onChange={(event) =>
+                  updateApprovalDraft(request.id, {
+                    ...payload,
+                    items: payload.items.map((row) =>
+                      row.timestamp === item.timestamp ? { ...row, ocrText: event.target.value } : row
+                    ),
+                  })
+                }
+              />
+            </article>
+          ))
+        )}
+      </div>
+    </div>
+  );
+
   const renderApprovalCard = (request: ApprovalRequest) => {
     const payload = approvalDrafts[request.id] || request.payload;
     switch (payload.kind) {
@@ -858,6 +995,12 @@ export default function App() {
         return renderDayIndexApproval(request, payload);
       case "chunk_context":
         return renderChunkContextApproval(request, payload);
+      case "live_context":
+        return renderLiveContextApproval(request, payload);
+      case "live_frame":
+        return renderLiveFrameApproval(request, payload);
+      case "live_snapshots":
+        return renderLiveSnapshotsApproval(request, payload);
     }
   };
 

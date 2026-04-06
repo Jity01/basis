@@ -34,6 +34,10 @@ extraResources:
     to: cloudflared-bin
     filter:
       - "**/*"
+  - from: resources/ocr-bin
+    to: ocr-bin
+    filter:
+      - "**/*"
 
 asar: true
 

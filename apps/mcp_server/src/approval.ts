@@ -2,7 +2,7 @@ import { randomUUID } from "crypto";
 
 export type ApprovalStatus = "approved" | "rejected" | "timeout";
 export type ApprovalResolution = "approved" | "rejected";
-export type ApprovalKind = "day_list" | "day_index" | "chunk_context";
+export type ApprovalKind = "day_list" | "day_index" | "chunk_context" | "live_context" | "live_frame" | "live_snapshots";
 
 export type DayListApprovalDay = {
   date: string;
@@ -41,10 +41,38 @@ export type ChunkContextApprovalPayload = {
   frames: ApprovalFrame[];
 };
 
+export type LiveContextApprovalPayload = {
+  kind: "live_context";
+  timelineText: string;
+};
+
+export type LiveFrameApprovalPayload = {
+  kind: "live_frame";
+  timestamp: number;
+  mimeType: string;
+  data: string;
+};
+
+export type LiveSnapshotItem = {
+  timestamp: number;
+  app: string;
+  windowTitle: string;
+  ocrText: string;
+  frame: ApprovalFrame;
+};
+
+export type LiveSnapshotsApprovalPayload = {
+  kind: "live_snapshots";
+  items: LiveSnapshotItem[];
+};
+
 export type ApprovalPayload =
   | DayListApprovalPayload
   | DayIndexApprovalPayload
-  | ChunkContextApprovalPayload;
+  | ChunkContextApprovalPayload
+  | LiveContextApprovalPayload
+  | LiveFrameApprovalPayload
+  | LiveSnapshotsApprovalPayload;
 
 export type ApprovalRequest = {
   id: string;
@@ -203,6 +231,30 @@ function formatChunkContextPayload(payload: ChunkContextApprovalPayload): string
   ].join("\n");
 }
 
+function formatLiveContextPayload(payload: LiveContextApprovalPayload): string {
+  return payload.timelineText || "(empty live context)";
+}
+
+function formatLiveFramePayload(payload: LiveFrameApprovalPayload): string {
+  return [
+    `Live frame timestamp: ${payload.timestamp}`,
+    `MIME: ${payload.mimeType}`,
+    "Image: (binary preview omitted)",
+  ].join("\n");
+}
+
+function formatLiveSnapshotsPayload(payload: LiveSnapshotsApprovalPayload): string {
+  if (payload.items.length === 0) {
+    return "No live snapshots.";
+  }
+  return payload.items
+    .map(
+      (item, i) =>
+        `[${i + 1}] ${item.app} — ${item.windowTitle} @ ${item.timestamp}\nOCR: ${item.ocrText.slice(0, 200)}${item.ocrText.length > 200 ? "..." : ""}`
+    )
+    .join("\n\n");
+}
+
 export function formatApprovalPayload(payload: ApprovalPayload): string {
   switch (payload.kind) {
     case "day_list":
@@ -211,6 +263,12 @@ export function formatApprovalPayload(payload: ApprovalPayload): string {
       return formatDayIndexPayload(payload);
     case "chunk_context":
       return formatChunkContextPayload(payload);
+    case "live_context":
+      return formatLiveContextPayload(payload);
+    case "live_frame":
+      return formatLiveFramePayload(payload);
+    case "live_snapshots":
+      return formatLiveSnapshotsPayload(payload);
   }
 }
 
@@ -245,6 +303,35 @@ function isChunkContextApprovalPayload(value: unknown): value is ChunkContextApp
     typeof (value as { summaryText?: unknown }).summaryText === "string" &&
     typeof (value as { metaText?: unknown }).metaText === "string" &&
     Array.isArray((value as { frames?: unknown }).frames)
+  );
+}
+
+function isLiveContextApprovalPayload(value: unknown): value is LiveContextApprovalPayload {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    (value as { kind?: unknown }).kind === "live_context" &&
+    typeof (value as { timelineText?: unknown }).timelineText === "string"
+  );
+}
+
+function isLiveFrameApprovalPayload(value: unknown): value is LiveFrameApprovalPayload {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    (value as { kind?: unknown }).kind === "live_frame" &&
+    typeof (value as { timestamp?: unknown }).timestamp === "number" &&
+    typeof (value as { mimeType?: unknown }).mimeType === "string" &&
+    typeof (value as { data?: unknown }).data === "string"
+  );
+}
+
+function isLiveSnapshotsApprovalPayload(value: unknown): value is LiveSnapshotsApprovalPayload {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    (value as { kind?: unknown }).kind === "live_snapshots" &&
+    Array.isArray((value as { items?: unknown }).items)
   );
 }
 
@@ -314,6 +401,49 @@ function normalizeApprovedPayload(original: ApprovalPayload, candidate: unknown)
             };
           })
           .filter((frame) => frame.name && frame.data),
+      };
+    case "live_context":
+      if (!isLiveContextApprovalPayload(candidate)) {
+        return original;
+      }
+      return {
+        kind: "live_context",
+        timelineText: candidate.timelineText,
+      };
+    case "live_frame":
+      if (!isLiveFrameApprovalPayload(candidate) || candidate.timestamp !== original.timestamp) {
+        return original;
+      }
+      return {
+        kind: "live_frame",
+        timestamp: original.timestamp,
+        mimeType: candidate.mimeType,
+        data: candidate.data,
+      };
+    case "live_snapshots":
+      if (!isLiveSnapshotsApprovalPayload(candidate)) {
+        return original;
+      }
+      return {
+        kind: "live_snapshots",
+        items: candidate.items
+          .filter((item) => item && typeof item === "object")
+          .map((item) => {
+            const parsed = item as Record<string, unknown>;
+            const frame = parsed.frame as Record<string, unknown> | undefined;
+            return {
+              timestamp: typeof parsed.timestamp === "number" ? parsed.timestamp : 0,
+              app: typeof parsed.app === "string" ? parsed.app : "",
+              windowTitle: typeof parsed.windowTitle === "string" ? parsed.windowTitle : "",
+              ocrText: typeof parsed.ocrText === "string" ? parsed.ocrText : "",
+              frame: {
+                name: typeof frame?.name === "string" ? frame.name : "",
+                mimeType: typeof frame?.mimeType === "string" ? frame.mimeType : "image/jpeg",
+                data: typeof frame?.data === "string" ? frame.data : "",
+              },
+            };
+          })
+          .filter((item) => item.frame.data),
       };
   }
 }
