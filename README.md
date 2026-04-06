@@ -87,6 +87,23 @@ Notes:
 - Remote tool calls still use the app's approval queue. Keep the app open to approve requests, or enable auto-approve while testing.
 - Optional redirect allowlist: set `MCP_OAUTH_ALLOWED_REDIRECT_URIS` to a comma-separated list of exact callback URLs. By default, the server accepts Claude callback URLs and loopback redirect URLs for local testing tools.
 
+## Claude Skill (Optional but recommended)
+
+The MCP connector gives Claude access to Basis tools. For better integration, you can also install the Basis skill, which teaches Claude:
+
+- When to automatically fetch your context (e.g., "what was I working on?")
+- The "ct" shortcut for quick context retrieval
+- How to navigate days → chunks → details efficiently
+
+### Install the skill
+
+1. Download the `skills/basis-context` folder from this repo
+2. Zip the folder (the folder itself should be the zip root, not its contents)
+3. In Claude.ai: **Settings → Capabilities → Skills → Upload**
+4. Toggle the skill on
+
+The skill works alongside the MCP connector — you need both for full functionality.
+
 ### Remote MCP Validation
 
 If a connector still fails, validate the server in this order:

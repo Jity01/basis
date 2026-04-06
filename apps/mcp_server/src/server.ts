@@ -41,8 +41,7 @@ const authRouters = new Map<string, RequestHandler>();
 const DEFAULT_LIST_DAYS_LIMIT = 14;
 
 /** Shown at MCP initialize and prefixed on each tool so agents favor continuity over chat-only state. */
-const CONTEXT_TOOLS_AGENT_INSTRUCTIONS =
-`The user has been consistently capturing their screen and accumulating data for you. Their intent is for you to use this context so that you understand exactly what they have been doing — you should ALWAYS be in sync with them.
+const CONTEXT_TOOLS_AGENT_INSTRUCTIONS=`The user has been consistently capturing their screen and accumulating data for you. Their intent is for you to use this context so that you understand exactly what they have been doing — you should ALWAYS be in sync with them.
 
 Before you answer any question that touches on the user's work, communications, or projects, use the context tools first. Do not assume you know enough. It is always better to check than to guess.
 
@@ -65,21 +64,21 @@ User: "I got an email from Caleb about the onboarding flow — help me respond."
 Often, one question touches on multiple different things and requires multiple rounds of lookup. Here, you need: (1) what the email says, and (2) what the user has been doing on the onboarding flow. These are probably in different chunks.
 
 Round 1 — Find recent days:
-  → list_days(limit: 3)
+  → list_days(limit: 3)
 
 Round 2 — Scan today first:
-  → get_day_index(date: "2026-04-04")
-  → Look for chunks mentioning "Gmail", "Caleb", or "email"
+  → get_day_index(date: "2026-04-04")
+  → Look for chunks mentioning "Gmail", "Caleb", or "email"
 
 Round 3 — Get the email content:
-  → get_chunk_context(chunkKey: "2026-04-04/14-30")
+  → get_chunk_context(chunkKey: "2026-04-04/14-30")
 
 Round 4 — Find project context (maybe on a DIFFERENT day):
-  → get_day_index on previous days too, scan for "onboarding", "Figma", or the relevant codebase
+  → get_day_index on previous days too, scan for "onboarding", "Figma", or the relevant codebase
 
 Round 5 — Get the project details:
-  → get_chunk_context on the relevant chunks
-  → Now you know what Caleb said AND what the user has been building, what decisions were made, what's still open
+  → get_chunk_context on the relevant chunks
+  → Now you know what Caleb said AND what the user has been building, what decisions were made, what's still open
 
 EXAMPLE 2 — Investigation (debugging something):
 
@@ -154,6 +153,7 @@ async function approvePayloadOrError(
   return { approvedPayload: approval.approvedPayload ?? payload };
 }
 
+
 function toolResultFromPayload(payload: ApprovalPayload): ToolResult {
   switch (payload.kind) {
     case "chunk_context":
@@ -208,7 +208,7 @@ function createMcpServer(): McpServer {
     "list_days",
     {
       description:
-        "Lists available context days with lightweight metadata such as chunk counts and time ranges.",
+        "CALL BEFORE ASKING CLARIFYING QUESTIONS about user context it lists screen activity days. Call this FIRST whenever the user asks about their work, projects, communications, or anything they were doing. Returns day-level summaries to help you identify which days to drill into.",
       inputSchema: {
         limit: z
           .number()
@@ -232,7 +232,7 @@ function createMcpServer(): McpServer {
     "get_day_index",
     {
       description:
-        "Returns one day's index.txt content plus chunk metadata for deterministic browsing.",
+        "Scans a specific day's activity to return what the user was doing throughout that day — apps used, topics covered, communications. Use this to find the right time chunks before calling get_chunk_context.",
       inputSchema: {
         date: z.string().describe("Day to inspect, formatted as YYYY-MM-DD."),
         contextRoot: z
@@ -250,7 +250,7 @@ function createMcpServer(): McpServer {
     "get_chunk_context",
     {
       description:
-        "Returns one chunk's reconstructed summary, metadata, and frame images for a specific chunk key.",
+        "Deep-dive into a specific time block returns detailed summaries and actual screenshots of what the user was seeing. Use this when you need the actual content — emails, code, documents, conversations.",
       inputSchema: {
         chunkKey: z
           .string()
