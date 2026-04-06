@@ -17,7 +17,7 @@
     "build:desktop": "pnpm build && pnpm build:mcp-bundle && pnpm build:binaries",
     "dist": "pnpm build:desktop && cd ../.. && pnpm exec electron-builder --project apps/desktop",
     "dist:dir": "pnpm build:desktop && cd ../.. && pnpm exec electron-builder --dir --project apps/desktop",
-    "dev": "pnpm build:packages && pnpm build:main && concurrently -k \"pnpm --filter @context-manager/mcp-server start\" \"vite --port 5173\" \"wait-on http://127.0.0.1:5173 && node scripts/start-electron.js\"",
+    "dev": "pnpm build:packages && pnpm build:main && concurrently -k \"node ../mcp_server/dist/server.js\" \"vite --port 5173\" \"wait-on http://127.0.0.1:5173 && node scripts/start-electron.js\"",
     "dev:vite": "vite",
     "dev:electron": "node scripts/start-electron.js",
     "build:ocr-helper": "node scripts/build-ocr-helper.js"
