@@ -40,6 +40,11 @@ extraResources:
       - "**/*"
 
 asar: true
+# sharp loads libvips from @img/sharp-libvips-* via dlopen; those paths break inside
+# app.asar, so unpack native deps to app.asar.unpacked (see sharp pixelplumbing install docs).
+asarUnpack:
+  - "**/node_modules/sharp/**"
+  - "**/node_modules/@img/**"
 
 mac:
   category: public.app-category.productivity
