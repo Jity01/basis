@@ -7,3 +7,4 @@ export * from "./searcher";
 export * from "./aiSettings";
 export * from "./chunkSettings";
 export * from "./hotbuffer";
+export * from "./exclusions";

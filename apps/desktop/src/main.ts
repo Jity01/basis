@@ -3,6 +3,8 @@ import { app, BrowserWindow } from "electron";
 import * as path from "path";
 import { setupIpc, setMainWindow } from "./ipc";
 import { startBundledMcpServer, stopBundledMcpServer } from "./mcpServer";
+import { clearExclusionsRequiresRestart, loadExclusions } from "@context-manager/core";
+import { initializeSckitExclusions } from "./sckitExclusions";
 
 // Log to terminal so we can see main process is running
 console.log("[Electron] Main process starting...");
@@ -43,6 +45,14 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  const exclusions = loadExclusions();
+  try {
+    initializeSckitExclusions(exclusions);
+    clearExclusionsRequiresRestart();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[sckit] exclusion init failed: ${message}`);
+  }
   startBundledMcpServer();
   setupIpc();
   createWindow();

@@ -21,10 +21,15 @@ import {
   type ChunkSettings,
   startHotBuffer,
   stopHotBuffer,
+  loadExclusions,
+  updateExclusions,
+  type ExclusionsConfig,
 } from "@context-manager/core";
 import { startIdleMonitor } from "./idle";
 import type { ApprovalPayload, ApprovalSettings, ApprovalState, ApprovalRequest } from "./approvalTypes";
 import { CONTEXT_ROOT, HOT_BUFFER_CONFIG, hotBufferDir } from "@context-manager/config";
+import { inspectAppBundlePath, scanInstalledApps } from "./appScanner";
+import { getInitializedExclusionBundleIds, getSckitExclusionsInitState } from "./sckitExclusions";
 
 
 function resolveOcrBinaryPath(): string | undefined {
@@ -71,6 +76,7 @@ type RemoteAccessState = {
 
 type AISettingsUpdate = Partial<AISettings>;
 type ChunkSettingsUpdate = Partial<ChunkSettings>;
+type ExclusionsUpdate = Partial<ExclusionsConfig>;
 
 type ProcessingTrigger = "idle" | "manual" | "live" | null;
 type ProcessingStatus = {
@@ -663,6 +669,7 @@ export function setupIpc(): void {
       jpegQuality: HOT_BUFFER_CONFIG.jpegQuality,
       hotbufferDir: hotBufferDir(CONTEXT_ROOT),
       ocrBinaryPath: resolveOcrBinaryPath(),
+      excludedBundleIds: getInitializedExclusionBundleIds(),
     });
     return { success: true, filePath };
   });
@@ -720,6 +727,35 @@ export function setupIpc(): void {
 
   ipcMain.handle("update-chunk-settings", (_event, payload: ChunkSettingsUpdate) => {
     return writeChunkSettings(payload || {});
+  });
+
+  ipcMain.handle("get-exclusions", () => {
+    return loadExclusions();
+  });
+
+  ipcMain.handle("update-exclusions", (_event, payload: ExclusionsUpdate) => {
+    return updateExclusions(payload || {});
+  });
+
+  ipcMain.handle("scan-installed-apps", (_event, payload?: { forceRefresh?: boolean }) => {
+    return scanInstalledApps(payload?.forceRefresh === true);
+  });
+
+  ipcMain.handle("scan-installed-app-from-path", (_event, appPath: string) => {
+    return inspectAppBundlePath(appPath);
+  });
+
+  ipcMain.handle("get-initialized-exclusion-bundle-ids", () => {
+    return getInitializedExclusionBundleIds();
+  });
+
+  ipcMain.handle("get-sckit-exclusions-init-state", () => {
+    return getSckitExclusionsInitState();
+  });
+
+  ipcMain.handle("restart-app", () => {
+    app.relaunch();
+    app.exit(0);
   });
 
   ipcMain.handle(

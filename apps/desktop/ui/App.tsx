@@ -40,6 +40,30 @@ type AISettings = {
   fireworksApiKey?: string;
 };
 
+type ExclusionEntry = {
+  bundle_id: string;
+  name: string;
+  is_default: boolean;
+  enabled: boolean;
+};
+
+type ExclusionsConfig = {
+  requires_restart: boolean;
+  bundle_ids: ExclusionEntry[];
+};
+
+type InstalledApp = {
+  bundleId: string;
+  name: string;
+  iconPath: string | null;
+};
+
+type SckitExclusionsInitState = {
+  initialized: boolean;
+  bundleIds: string[];
+  error: string | null;
+};
+
 type TabId = "controls" | "requests" | "settings";
 
 const fallbackSettings: ApprovalSettings = {
@@ -51,6 +75,17 @@ const fallbackAISettings: AISettings = {
   provider: "fireworks",
   localBaseUrl: "http://127.0.0.1:11434/v1",
   localTaggingModel: "llava:7b",
+};
+
+const initialExclusionsConfig: ExclusionsConfig = {
+  requires_restart: false,
+  bundle_ids: [],
+};
+
+const initialSckitExclusionsState: SckitExclusionsInitState = {
+  initialized: false,
+  bundleIds: [],
+  error: null,
 };
 
 function formatFriendlyDate(dateText: string): string {
@@ -170,6 +205,14 @@ export default function App() {
   const [aiSettings, setAISettings] = useState<AISettings>(fallbackAISettings);
   const [settingsTimeoutSeconds, setSettingsTimeoutSeconds] = useState(120);
   const [chunkDurationMinutes, setChunkDurationMinutes] = useState(5);
+  const [exclusions, setExclusions] = useState<ExclusionsConfig>(initialExclusionsConfig);
+  const [installedApps, setInstalledApps] = useState<InstalledApp[]>([]);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerQuery, setPickerQuery] = useState("");
+  const [manualBundleId, setManualBundleId] = useState("");
+  const [sckitExclusionsState, setSckitExclusionsState] = useState<SckitExclusionsInitState>(
+    initialSckitExclusionsState
+  );
   const [approvalDrafts, setApprovalDrafts] = useState<Record<string, ApprovalPayload>>({});
   const [approvalNotice, setApprovalNotice] = useState<string | null>(null);
   const [frameLightbox, setFrameLightbox] = useState<{ src: string; title: string } | null>(null);
@@ -473,6 +516,62 @@ export default function App() {
     }
   }, [chunkDurationMinutes]);
 
+  const setExclusionsAndNotify = useCallback((next: ExclusionsConfig, notice: string) => {
+    setExclusions(next);
+    setApprovalNotice(notice);
+  }, []);
+
+  const updateExclusionEntries = useCallback(
+    async (entries: ExclusionEntry[], notice: string) => {
+      const updated = await contextManager.updateExclusions({ bundle_ids: entries });
+      setExclusionsAndNotify(updated, notice);
+    },
+    [setExclusionsAndNotify]
+  );
+
+  const toggleExclusion = useCallback(
+    async (bundleId: string, enabled: boolean) => {
+      const nextEntries = exclusions.bundle_ids.map((entry) =>
+        entry.bundle_id === bundleId ? { ...entry, enabled } : entry
+      );
+      await updateExclusionEntries(nextEntries, "Excluded windows updated. Restart required.");
+    },
+    [exclusions.bundle_ids, updateExclusionEntries]
+  );
+
+  const removeExclusion = useCallback(
+    async (bundleId: string) => {
+      const nextEntries = exclusions.bundle_ids.filter((entry) => entry.bundle_id !== bundleId);
+      await updateExclusionEntries(nextEntries, "Excluded windows updated. Restart required.");
+    },
+    [exclusions.bundle_ids, updateExclusionEntries]
+  );
+
+  const addExclusion = useCallback(
+    async (entry: { bundleId: string; name: string }) => {
+      const normalized = entry.bundleId.trim();
+      if (!normalized) {
+        return;
+      }
+      const existing = exclusions.bundle_ids.find((candidate) => candidate.bundle_id === normalized);
+      const nextEntries = existing
+        ? exclusions.bundle_ids.map((candidate) =>
+            candidate.bundle_id === normalized ? { ...candidate, name: entry.name, enabled: true } : candidate
+          )
+        : [
+            ...exclusions.bundle_ids,
+            {
+              bundle_id: normalized,
+              name: entry.name || normalized,
+              is_default: false,
+              enabled: true,
+            },
+          ];
+      await updateExclusionEntries(nextEntries, "Excluded windows updated. Restart required.");
+    },
+    [exclusions.bundle_ids, updateExclusionEntries]
+  );
+
   const saveAllSettings = useCallback(async () => {
     await saveChunkSettings();
     await saveAISettings();
@@ -558,6 +657,15 @@ export default function App() {
     void contextManager.getAISettings().then((settings) => {
       setAISettings(settings);
     });
+    void contextManager.getExclusions().then((settings) => {
+      setExclusions(settings);
+    });
+    void contextManager.scanInstalledApps().then((apps) => {
+      setInstalledApps(apps);
+    });
+    void contextManager.getSckitExclusionsInitState().then((state) => {
+      setSckitExclusionsState(state);
+    });
 
     const unsubscribeProcessing = contextManager.onProcessingStatus((status) => {
       setProcessingStatus(status);
@@ -612,7 +720,50 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [frameLightbox]);
 
+  useEffect(() => {
+    if (!pickerOpen) {
+      return;
+    }
+    const onDragOver = (event: DragEvent) => {
+      event.preventDefault();
+    };
+    const onDrop = (event: DragEvent) => {
+      event.preventDefault();
+      const droppedFile = event.dataTransfer?.files?.[0] as (File & { path?: string }) | undefined;
+      const filePath = droppedFile?.path;
+      if (!filePath || !filePath.endsWith(".app")) {
+        return;
+      }
+      void contextManager.scanInstalledAppFromPath(filePath).then((appEntry) => {
+        if (!appEntry) {
+          return;
+        }
+        void addExclusion({ bundleId: appEntry.bundleId, name: appEntry.name });
+      });
+    };
+    window.addEventListener("dragover", onDragOver);
+    window.addEventListener("drop", onDrop);
+    return () => {
+      window.removeEventListener("dragover", onDragOver);
+      window.removeEventListener("drop", onDrop);
+    };
+  }, [addExclusion, pickerOpen]);
+
   const pendingCount = pendingApprovals.length;
+  const exclusionQuery = pickerQuery.trim().toLowerCase();
+  const excludedIds = new Set(exclusions.bundle_ids.map((entry) => entry.bundle_id));
+  const filteredApps = installedApps.filter((app) => {
+    if (excludedIds.has(app.bundleId)) {
+      return false;
+    }
+    if (!exclusionQuery) {
+      return true;
+    }
+    return (
+      app.name.toLowerCase().includes(exclusionQuery) ||
+      app.bundleId.toLowerCase().includes(exclusionQuery)
+    );
+  });
   const isLocalProvider = aiSettings.provider === "local";
   const statusToneClass = processingStatus.isProcessing
     ? "tone-processing"
@@ -1032,6 +1183,11 @@ export default function App() {
         </div>
 
         {error && <p className="banner banner-error">{error}</p>}
+        {!sckitExclusionsState.initialized && sckitExclusionsState.error && (
+          <p className="banner banner-error">
+            OS-level exclusions failed to initialize: {sckitExclusionsState.error}
+          </p>
+        )}
         {approvalNotice && <p className="banner banner-info">{approvalNotice}</p>}
 
         {activeTab === "controls" && (
@@ -1151,6 +1307,130 @@ export default function App() {
                 New recordings rotate every {chunkDurationMinutes || 5} minute
                 {Math.abs(chunkDurationMinutes || 5) === 1 ? "" : "s"}. Default is 5 minutes.
               </p>
+
+              <div className="section-heading">
+                <h2 className="section-title">Privacy &mdash; Excluded Windows</h2>
+              </div>
+              <p className="support-copy">
+                Apps in this list are blocked at the OS level. Their pixels never enter Basis.
+              </p>
+              {exclusions.requires_restart && (
+                <div className="banner banner-warning restart-banner">
+                  <span>Restart Basis to apply exclusion changes.</span>
+                  <button className="button button-secondary" type="button" onClick={() => void contextManager.restartApp()}>
+                    Restart Now
+                  </button>
+                </div>
+              )}
+              <div className="exclusion-list">
+                {exclusions.bundle_ids.map((entry) => (
+                  <article key={entry.bundle_id} className="exclusion-row">
+                    <div className="exclusion-meta">
+                      <div className="exclusion-name">{entry.name}</div>
+                      <div className="exclusion-bundle">{entry.bundle_id}</div>
+                    </div>
+                    <label className="checkbox-row exclusion-toggle">
+                      <input
+                        type="checkbox"
+                        checked={entry.enabled}
+                        onChange={(event) => {
+                          void toggleExclusion(entry.bundle_id, event.target.checked);
+                        }}
+                      />
+                      <span>{entry.enabled ? "Enabled" : "Disabled"}</span>
+                    </label>
+                    {!entry.is_default && (
+                      <button
+                        className="button button-ghost"
+                        type="button"
+                        onClick={() => {
+                          void removeExclusion(entry.bundle_id);
+                        }}
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </article>
+                ))}
+              </div>
+              <div className="button-row">
+                <button
+                  className="button button-secondary"
+                  type="button"
+                  onClick={() => {
+                    setPickerOpen((current) => !current);
+                    if (!pickerOpen) {
+                      void contextManager.scanInstalledApps().then((apps) => setInstalledApps(apps));
+                    }
+                  }}
+                >
+                  {pickerOpen ? "Close App Picker" : "Add App"}
+                </button>
+              </div>
+              {pickerOpen && (
+                <div className="exclusion-picker">
+                  <input
+                    className="field-input"
+                    placeholder="Search apps by name or bundle ID"
+                    value={pickerQuery}
+                    onChange={(event) => setPickerQuery(event.target.value)}
+                  />
+                  <div className="exclusion-picker-results">
+                    {filteredApps.length === 0 ? (
+                      <p className="empty-state">No matching apps.</p>
+                    ) : (
+                      filteredApps.map((appEntry) => (
+                        <button
+                          key={appEntry.bundleId}
+                          className="exclusion-picker-item"
+                          type="button"
+                          onClick={() => {
+                            void addExclusion({ bundleId: appEntry.bundleId, name: appEntry.name });
+                          }}
+                        >
+                          {appEntry.iconPath ? (
+                            <img src={`file://${appEntry.iconPath}`} alt="" className="exclusion-app-icon" />
+                          ) : (
+                            <span className="exclusion-app-icon-fallback" aria-hidden>
+                              App
+                            </span>
+                          )}
+                          <span>{appEntry.name}</span>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                  <div className="exclusion-manual-add">
+                    <label className="field-label" htmlFor="manual-bundle-id">
+                      Enter bundle ID manually
+                    </label>
+                    <div className="button-row">
+                      <input
+                        id="manual-bundle-id"
+                        className="field-input"
+                        placeholder="com.example.desktop"
+                        value={manualBundleId}
+                        onChange={(event) => setManualBundleId(event.target.value)}
+                      />
+                      <button
+                        className="button button-secondary"
+                        type="button"
+                        onClick={() => {
+                          const bundleId = manualBundleId.trim();
+                          if (!bundleId) {
+                            return;
+                          }
+                          void addExclusion({ bundleId, name: bundleId });
+                          setManualBundleId("");
+                        }}
+                      >
+                        Add
+                      </button>
+                    </div>
+                    <p className="support-copy">You can also drag a <code>.app</code> bundle onto this list.</p>
+                  </div>
+                </div>
+              )}
 
               <div className="section-heading">
                 <h2 className="section-title">AI settings</h2>

@@ -37,6 +37,45 @@ interface ContextManagerAPI {
   }) => Promise<{
     chunkDurationMinutes: number;
   }>;
+  getExclusions: () => Promise<{
+    requires_restart: boolean;
+    bundle_ids: Array<{
+      bundle_id: string;
+      name: string;
+      is_default: boolean;
+      enabled: boolean;
+    }>;
+  }>;
+  updateExclusions: (settings: {
+    requires_restart?: boolean;
+    bundle_ids?: Array<{
+      bundle_id: string;
+      name: string;
+      is_default: boolean;
+      enabled: boolean;
+    }>;
+  }) => Promise<{
+    requires_restart: boolean;
+    bundle_ids: Array<{
+      bundle_id: string;
+      name: string;
+      is_default: boolean;
+      enabled: boolean;
+    }>;
+  }>;
+  scanInstalledApps: (opts?: { forceRefresh?: boolean }) => Promise<
+    Array<{ bundleId: string; name: string; iconPath: string | null }>
+  >;
+  scanInstalledAppFromPath: (appPath: string) => Promise<
+    { bundleId: string; name: string; iconPath: string | null } | null
+  >;
+  getInitializedExclusionBundleIds: () => Promise<string[]>;
+  getSckitExclusionsInitState: () => Promise<{
+    initialized: boolean;
+    bundleIds: string[];
+    error: string | null;
+  }>;
+  restartApp: () => Promise<void>;
   getDesktopSources: (opts: { types: ("screen" | "window")[] }) => Promise<
     Array<{ id: string; name: string }>
   >;

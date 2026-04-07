@@ -11,7 +11,7 @@
     "build:mcp-bundle": "node scripts/bundle-mcp.js",
     "build:ffmpeg-bundle": "node scripts/bundle-ffmpeg.js",
     "build:cloudflared-bundle": "node scripts/bundle-cloudflared.js",
-    "build:binaries": "pnpm build:ocr-helper && pnpm build:ffmpeg-bundle && pnpm build:cloudflared-bundle",
+    "build:binaries": "pnpm build:ocr-helper && pnpm build:sckit-exclusions-helper && pnpm build:ffmpeg-bundle && pnpm build:cloudflared-bundle",
     "build:main": "tsc -p tsconfig.main.json",
     "build:renderer": "vite build",
     "build:desktop": "pnpm build && pnpm build:mcp-bundle && pnpm build:binaries",
@@ -20,7 +20,8 @@
     "dev": "pnpm build:packages && pnpm build:main && concurrently -k \"node ../mcp_server/dist/server.js\" \"vite --port 5173\" \"wait-on http://127.0.0.1:5173 && node scripts/start-electron.js\"",
     "dev:vite": "vite",
     "dev:electron": "node scripts/start-electron.js",
-    "build:ocr-helper": "node scripts/build-ocr-helper.js"
+    "build:ocr-helper": "node scripts/build-ocr-helper.js",
+    "build:sckit-exclusions-helper": "node scripts/build-sckit-exclusions-helper.js"
   },
   "dependencies": {
     "@context-manager/config": "workspace:*",

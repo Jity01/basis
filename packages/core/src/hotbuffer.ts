@@ -17,6 +17,7 @@ export interface HotBufferConfig {
   hotbufferDir: string;
   /** macOS: path to Vision OCR CLI (JPEG path as argv[1], UTF-8 text on stdout). */
   ocrBinaryPath?: string;
+  excludedBundleIds?: string[];
 }
 
 export interface HotBufferEntry {
@@ -40,18 +41,22 @@ function ensureDir(dir: string): void {
   fs.mkdirSync(dir, { recursive: true });
 }
 
-async function getFrontWindowInfoDarwin(): Promise<{ app: string; windowTitle: string }> {
+async function getFrontWindowInfoDarwin(): Promise<{ app: string; bundleId: string; windowTitle: string }> {
   const script = `tell application "System Events"
   set frontApp to name of first application process whose frontmost is true
+  set frontBundleId to ""
   set windowTitle to ""
   try
     tell process frontApp
+      try
+        set frontBundleId to bundle identifier
+      end try
       if (count of windows) > 0 then
         set windowTitle to name of window 1
       end if
     end tell
   end try
-  return frontApp & "|||" & windowTitle
+  return frontApp & "|||" & frontBundleId & "|||" & windowTitle
 end tell`;
   try {
     const { stdout } = await execFileAsync("osascript", ["-e", script], {
@@ -61,18 +66,19 @@ end tell`;
     const text = String(stdout).trim();
     const parts = text.split("|||");
     const app = parts[0] ?? "";
-    const windowTitle = parts.slice(1).join("|||");
-    return { app, windowTitle };
+    const bundleId = parts[1] ?? "";
+    const windowTitle = parts.slice(2).join("|||");
+    return { app, bundleId, windowTitle };
   } catch {
-    return { app: "", windowTitle: "" };
+    return { app: "", bundleId: "", windowTitle: "" };
   }
 }
 
-async function getFrontWindowInfo(): Promise<{ app: string; windowTitle: string }> {
+async function getFrontWindowInfo(): Promise<{ app: string; bundleId: string; windowTitle: string }> {
   if (process.platform === "darwin") {
     return getFrontWindowInfoDarwin();
   }
-  return { app: "", windowTitle: "" };
+  return { app: "", bundleId: "", windowTitle: "" };
 }
 
 async function runOcr(jpegPath: string, ocrBinaryPath: string | undefined): Promise<string> {
@@ -122,6 +128,10 @@ async function captureOnce(config: HotBufferConfig): Promise<void> {
 
   const { width, height } = config.resolution;
   const maxBytes = HOT_BUFFER_CONFIG.maxFrameSizeBytes;
+  const { app, bundleId, windowTitle } = await getFrontWindowInfo();
+  if (bundleId && config.excludedBundleIds?.includes(bundleId)) {
+    return;
+  }
 
   let raw: Buffer;
   try {
@@ -140,7 +150,6 @@ async function captureOnce(config: HotBufferConfig): Promise<void> {
   }
 
   const ts = Date.now();
-  const { app, windowTitle } = await getFrontWindowInfo();
 
   ensureDir(config.hotbufferDir);
   const base = path.join(config.hotbufferDir, String(ts));

@@ -44,6 +44,21 @@ contextBridge.exposeInMainWorld("contextManager", {
   getChunkSettings: () => ipcRenderer.invoke("get-chunk-settings"),
   updateChunkSettings: (settings: { chunkDurationMinutes?: number }) =>
     ipcRenderer.invoke("update-chunk-settings", settings),
+  getExclusions: () => ipcRenderer.invoke("get-exclusions"),
+  updateExclusions: (settings: {
+    requires_restart?: boolean;
+    bundle_ids?: Array<{
+      bundle_id: string;
+      name: string;
+      is_default: boolean;
+      enabled: boolean;
+    }>;
+  }) => ipcRenderer.invoke("update-exclusions", settings),
+  scanInstalledApps: (opts?: { forceRefresh?: boolean }) => ipcRenderer.invoke("scan-installed-apps", opts || {}),
+  scanInstalledAppFromPath: (appPath: string) => ipcRenderer.invoke("scan-installed-app-from-path", appPath),
+  getInitializedExclusionBundleIds: () => ipcRenderer.invoke("get-initialized-exclusion-bundle-ids"),
+  getSckitExclusionsInitState: () => ipcRenderer.invoke("get-sckit-exclusions-init-state"),
+  restartApp: () => ipcRenderer.invoke("restart-app"),
   getDesktopSources: (opts: { types: ("screen" | "window")[] }) =>
     ipcRenderer.invoke("get-desktop-sources", opts),
   getApprovalState: () => ipcRenderer.invoke("get-approval-state"),
