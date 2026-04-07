@@ -1,6 +1,19 @@
 /// <reference types="vite/client" />
 
-import type { ApprovalPayload, ApprovalState } from "../src/approvalTypes";
+interface TailscalePeer {
+  hostname: string;
+  tailscaleIp: string;
+  os: string;
+  online: boolean;
+}
+
+interface TailscaleStatus {
+  installed: boolean;
+  running: boolean;
+  hostname: string | null;
+  tailscaleIp: string | null;
+  peers: TailscalePeer[];
+}
 
 interface ContextManagerAPI {
   startRecording: () => Promise<{ success: boolean; filePath: string }>;
@@ -40,20 +53,6 @@ interface ContextManagerAPI {
   getDesktopSources: (opts: { types: ("screen" | "window")[] }) => Promise<
     Array<{ id: string; name: string }>
   >;
-  getApprovalState: () => Promise<ApprovalState>;
-  resolveApproval: (
-    requestId: string,
-    resolution: "approved" | "rejected",
-    approvedPayload?: ApprovalPayload
-  ) => Promise<{ ok: boolean }>;
-  approveAllRequests: () => Promise<{ ok: boolean; resolvedCount: number }>;
-  updateApprovalSettings: (settings: {
-    autoApproveAllRequests?: boolean;
-    timeoutMs?: number;
-  }) => Promise<{
-    autoApproveAllRequests: boolean;
-    timeoutMs: number;
-  }>;
   getAISettings: () => Promise<{
     provider: "fireworks" | "local";
     localBaseUrl: string;
@@ -71,28 +70,8 @@ interface ContextManagerAPI {
     localTaggingModel: string;
     fireworksApiKey?: string;
   }>;
-  getRemoteAccessState: () => Promise<{
-    enabled: boolean;
-    status: "disabled" | "starting" | "connected" | "reconnecting" | "error";
-    publicUrl: string | null;
-    authToken: string | null;
-    error: string | null;
-  }>;
-  setRemoteAccessEnabled: (enabled: boolean) => Promise<{
-    enabled: boolean;
-    status: "disabled" | "starting" | "connected" | "reconnecting" | "error";
-    publicUrl: string | null;
-    authToken: string | null;
-    error: string | null;
-  }>;
-  onRemoteAccessState: (callback: (state: {
-    enabled: boolean;
-    status: "disabled" | "starting" | "connected" | "reconnecting" | "error";
-    publicUrl: string | null;
-    authToken: string | null;
-    error: string | null;
-  }) => void) => () => void;
-  onApprovalState: (callback: (state: ApprovalState) => void) => () => void;
+  getTailscaleStatus: () => Promise<TailscaleStatus>;
+  onTailscaleStatus: (callback: (status: TailscaleStatus) => void) => () => void;
 }
 
 declare global {

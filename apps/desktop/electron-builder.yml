@@ -9,7 +9,7 @@ directories:
   output: release
   buildResources: build
 
-# Include app output + dependencies; exclude source and the MCP staging folder (MCP is in extraResources).
+# Include app output + dependencies; exclude source and staging folders.
 files:
   - "**/*"
   - "!resources/**"
@@ -22,16 +22,8 @@ files:
   - "!release/**"
 
 extraResources:
-  - from: resources/mcp-server
-    to: mcp-server
-    filter:
-      - "**/*"
   - from: resources/ffmpeg-bin
     to: ffmpeg-bin
-    filter:
-      - "**/*"
-  - from: resources/cloudflared-bin
-    to: cloudflared-bin
     filter:
       - "**/*"
   - from: resources/ocr-bin

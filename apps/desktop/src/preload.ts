@@ -1,5 +1,4 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { ApprovalPayload, ApprovalState } from "./approvalTypes";
 
 contextBridge.exposeInMainWorld("contextManager", {
   startRecording: () => ipcRenderer.invoke("start-recording"),
@@ -46,16 +45,6 @@ contextBridge.exposeInMainWorld("contextManager", {
     ipcRenderer.invoke("update-chunk-settings", settings),
   getDesktopSources: (opts: { types: ("screen" | "window")[] }) =>
     ipcRenderer.invoke("get-desktop-sources", opts),
-  getApprovalState: () => ipcRenderer.invoke("get-approval-state"),
-  resolveApproval: (
-    requestId: string,
-    resolution: "approved" | "rejected",
-    approvedPayload?: ApprovalPayload
-  ) => ipcRenderer.invoke("resolve-approval", { requestId, resolution, approvedPayload }),
-  approveAllRequests: () => ipcRenderer.invoke("approve-all-requests"),
-  updateApprovalSettings: (settings: { autoApproveAllRequests?: boolean; timeoutMs?: number }) =>
-    ipcRenderer.invoke("update-approval-settings", settings),
-  getRemoteAccessState: () => ipcRenderer.invoke("get-remote-access-state"),
   getAISettings: () => ipcRenderer.invoke("get-ai-settings"),
   updateAISettings: (settings: {
     provider?: "fireworks" | "local";
@@ -63,41 +52,40 @@ contextBridge.exposeInMainWorld("contextManager", {
     localTaggingModel?: string;
     fireworksApiKey?: string;
   }) => ipcRenderer.invoke("update-ai-settings", settings),
-  setRemoteAccessEnabled: (enabled: boolean) => ipcRenderer.invoke("set-remote-access-enabled", enabled),
-  onRemoteAccessState: (
-    callback: (state: {
-      enabled: boolean;
-      status: "disabled" | "starting" | "connected" | "reconnecting" | "error";
-      publicUrl: string | null;
-      authToken: string | null;
-      error: string | null;
+  getTailscaleStatus: () => ipcRenderer.invoke("get-tailscale-status"),
+  onTailscaleStatus: (
+    callback: (status: {
+      installed: boolean;
+      running: boolean;
+      hostname: string | null;
+      tailscaleIp: string | null;
+      peers: Array<{
+        hostname: string;
+        tailscaleIp: string;
+        os: string;
+        online: boolean;
+      }>;
     }) => void
   ) => {
-    const listener = (_event: unknown, state: unknown) => {
+    const listener = (_event: unknown, status: unknown) => {
       callback(
-        state as {
-          enabled: boolean;
-          status: "disabled" | "starting" | "connected" | "reconnecting" | "error";
-          publicUrl: string | null;
-          authToken: string | null;
-          error: string | null;
+        status as {
+          installed: boolean;
+          running: boolean;
+          hostname: string | null;
+          tailscaleIp: string | null;
+          peers: Array<{
+            hostname: string;
+            tailscaleIp: string;
+            os: string;
+            online: boolean;
+          }>;
         }
       );
     };
-    ipcRenderer.on("remote-access-state", listener);
+    ipcRenderer.on("tailscale-status", listener);
     return () => {
-      ipcRenderer.removeListener("remote-access-state", listener);
-    };
-  },
-  onApprovalState: (
-    callback: (state: ApprovalState) => void
-  ) => {
-    const listener = (_event: unknown, state: unknown) => {
-      callback(state as ApprovalState);
-    };
-    ipcRenderer.on("approval-state", listener);
-    return () => {
-      ipcRenderer.removeListener("approval-state", listener);
+      ipcRenderer.removeListener("tailscale-status", listener);
     };
   },
 });

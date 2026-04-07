@@ -1,19 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import type {
-  ApprovalFrame,
-  ApprovalPayload,
-  ApprovalRequest,
-  ApprovalSettings,
-  ChunkContextApprovalPayload,
-  DayIndexApprovalPayload,
-  DayListApprovalPayload,
-  LiveContextApprovalPayload,
-  LiveFrameApprovalPayload,
-  LiveSnapshotsApprovalPayload,
-} from "../src/approvalTypes";
 
 const contextManager = window.contextManager;
-const INDEX_SECTION_PATTERN = /\[(\d{2}):(\d{2})\]\n([\s\S]*?)(?=\n\n\[\d{2}:\d{2}\]\n|$)/g;
 
 type ProcessingStatus = {
   isProcessing: boolean;
@@ -25,14 +12,6 @@ type ProcessingStatus = {
   trigger: "idle" | "manual" | "live" | null;
 };
 
-type RemoteAccessState = {
-  enabled: boolean;
-  status: "disabled" | "starting" | "connected" | "reconnecting" | "error";
-  publicUrl: string | null;
-  authToken: string | null;
-  error: string | null;
-};
-
 type AISettings = {
   provider: "fireworks" | "local";
   localBaseUrl: string;
@@ -40,108 +19,13 @@ type AISettings = {
   fireworksApiKey?: string;
 };
 
-type TabId = "controls" | "requests" | "settings";
-
-const fallbackSettings: ApprovalSettings = {
-  autoApproveAllRequests: false,
-  timeoutMs: 120_000,
-};
+type TabId = "controls" | "network" | "settings";
 
 const fallbackAISettings: AISettings = {
   provider: "fireworks",
   localBaseUrl: "http://127.0.0.1:11434/v1",
   localTaggingModel: "llava:7b",
 };
-
-function formatFriendlyDate(dateText: string): string {
-  const date = new Date(`${dateText}T00:00:00`);
-  if (Number.isNaN(date.getTime())) {
-    return dateText;
-  }
-  return date.toLocaleDateString(undefined, {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
-function formatFriendlyTime(timeText: string): string {
-  const [hourText = "00", minuteText = "00"] = timeText.split(":");
-  const date = new Date(2000, 0, 1, Number(hourText), Number(minuteText));
-  if (Number.isNaN(date.getTime())) {
-    return timeText;
-  }
-  return date.toLocaleTimeString(undefined, {
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
-function formatCreatedAt(createdAt: string): string {
-  const date = new Date(createdAt);
-  if (Number.isNaN(date.getTime())) {
-    return createdAt;
-  }
-  return date.toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
-function parseIndexSections(indexText: string): Array<{ time: string; summaryText: string }> {
-  const sections: Array<{ time: string; summaryText: string }> = [];
-  INDEX_SECTION_PATTERN.lastIndex = 0;
-  let match: RegExpExecArray | null;
-  while ((match = INDEX_SECTION_PATTERN.exec(indexText)) !== null) {
-    sections.push({
-      time: `${match[1]}:${match[2]}`,
-      summaryText: (match[3] || "").trim(),
-    });
-  }
-  return sections;
-}
-
-function normalizeClockTime(timeText: string): string {
-  const [hRaw = "0", mRaw = "0"] = timeText.trim().split(":");
-  const hour = Math.min(23, Math.max(0, Number.parseInt(hRaw, 10) || 0));
-  const minute = Math.min(59, Math.max(0, Number.parseInt(mRaw, 10) || 0));
-  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
-}
-
-function serializeIndexSections(sections: Array<{ time: string; summaryText: string }>): string {
-  return sections
-    .map((section) => {
-      const t = normalizeClockTime(section.time);
-      const body = section.summaryText.replace(/\r\n/g, "\n").trimEnd();
-      return `[${t}]\n${body}`;
-    })
-    .join("\n\n")
-    .trimEnd();
-}
-
-function frameDataUrl(frame: ApprovalFrame): string {
-  return `data:${frame.mimeType};base64,${frame.data}`;
-}
-
-function approvalKindLabel(payload: ApprovalPayload): string {
-  switch (payload.kind) {
-    case "day_list":
-      return "Day list";
-    case "day_index":
-      return "Day index";
-    case "chunk_context":
-      return "Chunk context";
-    case "live_context":
-      return "Live context";
-    case "live_frame":
-      return "Live frame";
-    case "live_snapshots":
-      return "Live snapshots";
-  }
-}
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabId>("controls");
@@ -157,22 +41,10 @@ export default function App() {
     activeRecordingChunk: false,
     trigger: null,
   });
-  const [remoteAccessState, setRemoteAccessState] = useState<RemoteAccessState>({
-    enabled: false,
-    status: "disabled",
-    publicUrl: null,
-    authToken: null,
-    error: null,
-  });
-  const [isTogglingRemoteAccess, setIsTogglingRemoteAccess] = useState(false);
-  const [pendingApprovals, setPendingApprovals] = useState<ApprovalRequest[]>([]);
-  const [approvalSettings, setApprovalSettings] = useState<ApprovalSettings>(fallbackSettings);
   const [aiSettings, setAISettings] = useState<AISettings>(fallbackAISettings);
-  const [settingsTimeoutSeconds, setSettingsTimeoutSeconds] = useState(120);
   const [chunkDurationMinutes, setChunkDurationMinutes] = useState(5);
-  const [approvalDrafts, setApprovalDrafts] = useState<Record<string, ApprovalPayload>>({});
-  const [approvalNotice, setApprovalNotice] = useState<string | null>(null);
-  const [frameLightbox, setFrameLightbox] = useState<{ src: string; title: string } | null>(null);
+  const [settingsNotice, setSettingsNotice] = useState<string | null>(null);
+  const [tailscaleStatus, setTailscaleStatus] = useState<TailscaleStatus | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -181,7 +53,6 @@ export default function App() {
   const isRotatingRef = useRef(false);
   const stoppingRef = useRef(false);
   const pendingChunkSendsRef = useRef(new Set<Promise<void>>());
-  const previousPendingCountRef = useRef(0);
 
   async function createScreenStream(): Promise<MediaStream> {
     const sources = await contextManager.getDesktopSources({ types: ["screen"] });
@@ -351,15 +222,6 @@ export default function App() {
     setProcessingStatus(status);
   }, []);
 
-  const refreshApprovalState = useCallback(async () => {
-    if (!contextManager) {
-      return;
-    }
-    const state = await contextManager.getApprovalState();
-    setPendingApprovals(state.pending);
-    setApprovalSettings(state.settings || fallbackSettings);
-  }, []);
-
   const processNow = useCallback(async () => {
     try {
       setError(null);
@@ -372,89 +234,12 @@ export default function App() {
     }
   }, [refreshProcessingStatus]);
 
-  const setRemoteAccessEnabled = useCallback(async (enabled: boolean) => {
-    try {
-      setError(null);
-      setIsTogglingRemoteAccess(true);
-      const nextState = await contextManager.setRemoteAccessEnabled(enabled);
-      setRemoteAccessState(nextState);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed updating remote access");
-    } finally {
-      setIsTogglingRemoteAccess(false);
-    }
-  }, []);
-
-  const copyToClipboard = useCallback(async (value: string | null) => {
-    if (!value) {
-      return;
-    }
-    try {
-      await navigator.clipboard.writeText(value);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed copying to clipboard");
-    }
-  }, []);
-
-  const updateApprovalDraft = useCallback((requestId: string, nextPayload: ApprovalPayload) => {
-    setApprovalDrafts((current) => ({ ...current, [requestId]: nextPayload }));
-  }, []);
-
-  const resolveRequest = useCallback(
-    async (request: ApprovalRequest, resolution: "approved" | "rejected") => {
-      try {
-        setError(null);
-        await contextManager.resolveApproval(
-          request.id,
-          resolution,
-          resolution === "approved" ? approvalDrafts[request.id] || request.payload : undefined
-        );
-        setPendingApprovals((current) => current.filter((pending) => pending.id !== request.id));
-        setApprovalDrafts((current) => {
-          const next = { ...current };
-          delete next[request.id];
-          return next;
-        });
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to resolve request");
-      }
-    },
-    [approvalDrafts]
-  );
-
-  const approveAll = useCallback(async () => {
-    try {
-      setError(null);
-      await contextManager.approveAllRequests();
-      setPendingApprovals([]);
-      setApprovalNotice("Approved all pending requests.");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to approve all requests");
-    }
-  }, []);
-
-  const saveSettings = useCallback(async () => {
-    try {
-      setError(null);
-      const timeoutMs = Math.max(5, settingsTimeoutSeconds) * 1000;
-      const updated = await contextManager.updateApprovalSettings({
-        autoApproveAllRequests: approvalSettings.autoApproveAllRequests,
-        timeoutMs,
-      });
-      setApprovalSettings(updated);
-      setSettingsTimeoutSeconds(Math.max(5, Math.round(updated.timeoutMs / 1000)));
-      setApprovalNotice("Approval settings saved.");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save approval settings");
-    }
-  }, [approvalSettings.autoApproveAllRequests, settingsTimeoutSeconds]);
-
   const saveAISettings = useCallback(async () => {
     try {
       setError(null);
       const updated = await contextManager.updateAISettings(aiSettings);
       setAISettings(updated);
-      setApprovalNotice("AI settings saved.");
+      setSettingsNotice("AI settings saved.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save AI settings");
     }
@@ -467,7 +252,7 @@ export default function App() {
         chunkDurationMinutes: Math.max(1, Math.round(chunkDurationMinutes)),
       });
       setChunkDurationMinutes(updated.chunkDurationMinutes);
-      setApprovalNotice("Capture settings saved.");
+      setSettingsNotice("Capture settings saved.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save capture settings");
     }
@@ -476,8 +261,7 @@ export default function App() {
   const saveAllSettings = useCallback(async () => {
     await saveChunkSettings();
     await saveAISettings();
-    await saveSettings();
-  }, [saveChunkSettings, saveAISettings, saveSettings]);
+  }, [saveChunkSettings, saveAISettings]);
 
   const formatDuration = (seconds: number) => {
     const m = Math.floor(seconds / 60);
@@ -526,21 +310,14 @@ export default function App() {
     return "Process Now";
   })();
 
-  const remoteStatusLine = (() => {
-    switch (remoteAccessState.status) {
-      case "connected":
-        return "Connected";
-      case "starting":
-        return "Starting tunnel...";
-      case "reconnecting":
-        return "Reconnecting tunnel...";
-      case "error":
-        return "Tunnel error";
-      default:
-        return "Disabled";
-    }
-  })();
-  const remoteMcpEndpoint = remoteAccessState.publicUrl ? `${remoteAccessState.publicUrl}/mcp` : null;
+  const isLocalProvider = aiSettings.provider === "local";
+  const statusToneClass = processingStatus.isProcessing
+    ? "tone-processing"
+    : isRecording
+      ? "tone-live"
+      : processingStatus.pendingChunks > 0
+        ? "tone-pending"
+        : "tone-ready";
 
   useEffect(() => {
     if (!contextManager) {
@@ -548,10 +325,6 @@ export default function App() {
     }
 
     void refreshProcessingStatus();
-    void refreshApprovalState();
-    void contextManager.getRemoteAccessState().then((state) => {
-      setRemoteAccessState(state);
-    });
     void contextManager.getChunkSettings().then((settings) => {
       setChunkDurationMinutes(settings.chunkDurationMinutes);
     });
@@ -562,447 +335,17 @@ export default function App() {
     const unsubscribeProcessing = contextManager.onProcessingStatus((status) => {
       setProcessingStatus(status);
     });
-    const unsubscribeApprovals = contextManager.onApprovalState((state) => {
-      const previousCount = previousPendingCountRef.current;
-      const nextCount = state.pending.length;
-      previousPendingCountRef.current = nextCount;
-      setPendingApprovals(state.pending);
-      setApprovalSettings(state.settings || fallbackSettings);
-      if (nextCount > previousCount) {
-        setApprovalNotice(`New context request pending (${nextCount} total).`);
-      }
-    });
-    const unsubscribeRemote = contextManager.onRemoteAccessState((state) => {
-      setRemoteAccessState(state);
-    });
+
+    void contextManager.getTailscaleStatus().then(setTailscaleStatus);
+    const unsubscribeTailscale = contextManager.onTailscaleStatus(setTailscaleStatus);
 
     return () => {
       unsubscribeProcessing();
-      unsubscribeApprovals();
-      unsubscribeRemote();
+      unsubscribeTailscale();
       if (rotationTimerRef.current) clearInterval(rotationTimerRef.current);
       if (durationTimerRef.current) clearInterval(durationTimerRef.current);
     };
-  }, [refreshApprovalState, refreshProcessingStatus]);
-
-  useEffect(() => {
-    setSettingsTimeoutSeconds(Math.max(5, Math.round(approvalSettings.timeoutMs / 1000)));
-  }, [approvalSettings.timeoutMs]);
-
-  useEffect(() => {
-    setApprovalDrafts((current) => {
-      const next: Record<string, ApprovalPayload> = {};
-      for (const request of pendingApprovals) {
-        next[request.id] = current[request.id] || request.payload;
-      }
-      return next;
-    });
-  }, [pendingApprovals]);
-
-  useEffect(() => {
-    if (!frameLightbox) {
-      return;
-    }
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setFrameLightbox(null);
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [frameLightbox]);
-
-  const pendingCount = pendingApprovals.length;
-  const isLocalProvider = aiSettings.provider === "local";
-  const statusToneClass = processingStatus.isProcessing
-    ? "tone-processing"
-    : isRecording
-      ? "tone-live"
-      : processingStatus.pendingChunks > 0
-        ? "tone-pending"
-        : "tone-ready";
-  const remoteStatusToneClass =
-    remoteAccessState.status === "connected"
-      ? "tone-ready"
-      : remoteAccessState.status === "error"
-        ? "tone-warning"
-        : remoteAccessState.status === "starting" || remoteAccessState.status === "reconnecting"
-          ? "tone-processing"
-          : "tone-muted";
-
-  const renderDayListApproval = (request: ApprovalRequest, payload: DayListApprovalPayload) => (
-    <div className="approval-stack">
-      <div className="approval-chip-row">
-        <span className="approval-kind-pill">{approvalKindLabel(payload)}</span>
-        <span className="approval-helper-pill">Approve as shown</span>
-      </div>
-      <div className="approval-day-grid">
-        {payload.days.length === 0 ? (
-          <p className="empty-state">No stored context days found.</p>
-        ) : (
-          payload.days.map((day) => (
-            <article key={`${request.id}-${day.date}`} className="approval-day-card">
-              <div className="approval-day-header">
-                <div>
-                  <p className="approval-day-date">{formatFriendlyDate(day.date)}</p>
-                  <p className="approval-day-subtitle">{day.date}</p>
-                </div>
-                <span className="approval-count-pill">
-                  {day.chunkCount} chunk{day.chunkCount === 1 ? "" : "s"}
-                </span>
-              </div>
-              <div className="approval-day-metadata">
-                <span>{day.firstChunkTime ? formatFriendlyTime(day.firstChunkTime) : "No start time"}</span>
-                <span>{day.lastChunkTime ? formatFriendlyTime(day.lastChunkTime) : "No end time"}</span>
-                <span>{day.hasIndex ? "Indexed" : "Missing index"}</span>
-              </div>
-            </article>
-          ))
-        )}
-      </div>
-    </div>
-  );
-
-  const renderDayIndexApproval = (request: ApprovalRequest, payload: DayIndexApprovalPayload) => {
-    const sections = parseIndexSections(payload.indexText);
-    const updateDayIndexSection = (
-      sectionIndex: number,
-      patch: Partial<{ time: string; summaryText: string }>
-    ) => {
-      const next = parseIndexSections(payload.indexText).map((section, i) =>
-        i === sectionIndex ? { ...section, ...patch } : section
-      );
-      updateApprovalDraft(request.id, {
-        ...payload,
-        indexText: serializeIndexSections(next),
-      });
-    };
-
-    return (
-      <div className="approval-stack">
-        <div className="approval-chip-row">
-          <span className="approval-kind-pill">{approvalKindLabel(payload)}</span>
-          <span className="approval-helper-pill">Edits apply only to this approval</span>
-        </div>
-        <div className="approval-date-hero">
-          <div>
-            <p className="approval-date-label">{formatFriendlyDate(payload.date)}</p>
-            <h3 className="approval-date-title">{payload.date}</h3>
-          </div>
-          <div className="approval-chip-row">
-            <span className="approval-count-pill">
-              {payload.chunkCount} chunk{payload.chunkCount === 1 ? "" : "s"}
-            </span>
-            <span className="approval-count-pill">{payload.chunkKeys.length} keys</span>
-          </div>
-        </div>
-        <div className="approval-time-section-list">
-          {sections.length === 0 ? (
-            <>
-              <p className="empty-state">No timestamp sections detected in this index.</p>
-              <div className="approval-editor-block">
-                <label className="field-label" htmlFor={`approval-index-${request.id}`}>
-                  Outgoing index text
-                </label>
-                <textarea
-                  id={`approval-index-${request.id}`}
-                  className="field-input approval-textarea"
-                  value={payload.indexText}
-                  onChange={(event) =>
-                    updateApprovalDraft(request.id, {
-                      ...payload,
-                      indexText: event.target.value,
-                    })
-                  }
-                />
-              </div>
-            </>
-          ) : (
-            sections.map((section, index) => (
-              <article key={`${request.id}-${section.time}-${index}`} className="approval-time-card">
-                <div className="approval-time-edit-row">
-                  <label className="field-label approval-time-field-label" htmlFor={`approval-time-${request.id}-${index}`}>
-                    Time
-                  </label>
-                  <input
-                    id={`approval-time-${request.id}-${index}`}
-                    type="time"
-                    className="field-input approval-time-input"
-                    value={normalizeClockTime(section.time)}
-                    onChange={(event) =>
-                      updateDayIndexSection(index, { time: event.target.value })
-                    }
-                  />
-                </div>
-                <label className="field-label" htmlFor={`approval-summary-${request.id}-${index}`}>
-                  Summary
-                </label>
-                <textarea
-                  id={`approval-summary-${request.id}-${index}`}
-                  className="field-input approval-textarea approval-time-body-textarea"
-                  value={section.summaryText}
-                  onChange={(event) =>
-                    updateDayIndexSection(index, { summaryText: event.target.value })
-                  }
-                />
-              </article>
-            ))
-          )}
-        </div>
-      </div>
-    );
-  };
-
-  const renderChunkContextApproval = (
-    request: ApprovalRequest,
-    payload: ChunkContextApprovalPayload
-  ) => (
-    <div className="approval-stack">
-      <div className="approval-chip-row">
-        <span className="approval-kind-pill">{approvalKindLabel(payload)}</span>
-        <span className="approval-helper-pill">Edits apply only to this approval</span>
-      </div>
-      <div className="approval-date-hero">
-        <div>
-          <p className="approval-date-label">{formatFriendlyDate(payload.date)}</p>
-          <h3 className="approval-date-title">{formatFriendlyTime(payload.time)}</h3>
-          <p className="approval-day-subtitle">{payload.chunkKey}</p>
-        </div>
-        <span className="approval-count-pill">
-          {payload.frames.length} frame{payload.frames.length === 1 ? "" : "s"}
-        </span>
-      </div>
-      <div className="approval-editor-block">
-        <label
-          className="field-label approval-editor-heading"
-          htmlFor={`approval-summary-${request.id}`}
-        >
-          Outgoing summary
-        </label>
-        <textarea
-          id={`approval-summary-${request.id}`}
-          className="field-input approval-textarea approval-textarea-short"
-          value={payload.summaryText}
-          onChange={(event) =>
-            updateApprovalDraft(request.id, {
-              ...payload,
-              summaryText: event.target.value,
-            })
-          }
-        />
-      </div>
-      <div className="approval-editor-block">
-        <label
-          className="field-label approval-editor-heading"
-          htmlFor={`approval-meta-${request.id}`}
-        >
-          Outgoing metadata
-        </label>
-        <textarea
-          id={`approval-meta-${request.id}`}
-          className="field-input approval-textarea"
-          value={payload.metaText}
-          onChange={(event) =>
-            updateApprovalDraft(request.id, {
-              ...payload,
-              metaText: event.target.value,
-            })
-          }
-        />
-      </div>
-      <div className="approval-frame-header">
-        <div>
-          <p className="approval-date-label">Frames</p>
-          <p className="approval-day-subtitle">Remove any frame you do not want to send.</p>
-        </div>
-        <span className="approval-count-pill">
-          {payload.frames.length} selected
-        </span>
-      </div>
-      <div className="approval-frame-grid">
-        {payload.frames.length === 0 ? (
-          <p className="empty-state">No frames selected for this approval.</p>
-        ) : (
-          payload.frames.map((frame) => (
-            <article key={`${request.id}-${frame.name}`} className="approval-frame-card">
-              <button
-                className="approval-frame-remove"
-                onClick={() =>
-                  updateApprovalDraft(request.id, {
-                    ...payload,
-                    frames: payload.frames.filter((candidate) => candidate.name !== frame.name),
-                  })
-                }
-                type="button"
-              >
-                Remove
-              </button>
-              <button
-                type="button"
-                className="approval-frame-image-button"
-                onClick={() =>
-                  setFrameLightbox({ src: frameDataUrl(frame), title: frame.name })
-                }
-                aria-label={`View full size: ${frame.name}`}
-              >
-                <img className="approval-frame-image" src={frameDataUrl(frame)} alt="" />
-              </button>
-              <div className="approval-frame-meta">
-                <span>{frame.name}</span>
-                <span>{frame.mimeType}</span>
-              </div>
-            </article>
-          ))
-        )}
-      </div>
-    </div>
-  );
-
-  const renderLiveContextApproval = (request: ApprovalRequest, payload: LiveContextApprovalPayload) => (
-    <div className="approval-stack">
-      <div className="approval-chip-row">
-        <span className="approval-kind-pill">{approvalKindLabel(payload)}</span>
-        <span className="approval-helper-pill">Edits apply only to this approval</span>
-      </div>
-      <div className="approval-editor-block">
-        <label className="field-label" htmlFor={`approval-live-ctx-${request.id}`}>
-          Outgoing text
-        </label>
-        <textarea
-          id={`approval-live-ctx-${request.id}`}
-          className="field-input approval-textarea"
-          value={payload.timelineText}
-          onChange={(event) =>
-            updateApprovalDraft(request.id, {
-              ...payload,
-              timelineText: event.target.value,
-            })
-          }
-        />
-      </div>
-    </div>
-  );
-
-  const renderLiveFrameApproval = (request: ApprovalRequest, payload: LiveFrameApprovalPayload) => (
-    <div className="approval-stack">
-      <div className="approval-chip-row">
-        <span className="approval-kind-pill">{approvalKindLabel(payload)}</span>
-        <span className="approval-helper-pill">Approve to send this screenshot</span>
-      </div>
-      <div className="approval-date-hero">
-        <p className="approval-day-subtitle">Timestamp {payload.timestamp}</p>
-      </div>
-      <div className="approval-frame-grid">
-        <article className="approval-frame-card">
-          <button
-            type="button"
-            className="approval-frame-image-button"
-            onClick={() =>
-              setFrameLightbox({
-                src: frameDataUrl({ name: "live", mimeType: payload.mimeType, data: payload.data }),
-                title: "Live frame",
-              })
-            }
-            aria-label="View full size"
-          >
-            <img
-              className="approval-frame-image"
-              src={frameDataUrl({ name: "live", mimeType: payload.mimeType, data: payload.data })}
-              alt=""
-            />
-          </button>
-        </article>
-      </div>
-    </div>
-  );
-
-  const renderLiveSnapshotsApproval = (
-    request: ApprovalRequest,
-    payload: LiveSnapshotsApprovalPayload
-  ) => (
-    <div className="approval-stack">
-      <div className="approval-chip-row">
-        <span className="approval-kind-pill">{approvalKindLabel(payload)}</span>
-        <span className="approval-helper-pill">Remove snapshots you do not want to send</span>
-      </div>
-      <div className="approval-frame-header">
-        <span className="approval-count-pill">{payload.items.length} snapshot(s)</span>
-      </div>
-      <div className="approval-frame-grid">
-        {payload.items.length === 0 ? (
-          <p className="empty-state">No snapshots selected.</p>
-        ) : (
-          payload.items.map((item) => (
-            <article key={`${request.id}-${item.timestamp}`} className="approval-frame-card">
-              <button
-                className="approval-frame-remove"
-                onClick={() =>
-                  updateApprovalDraft(request.id, {
-                    ...payload,
-                    items: payload.items.filter((row) => row.timestamp !== item.timestamp),
-                  })
-                }
-                type="button"
-              >
-                Remove
-              </button>
-              <button
-                type="button"
-                className="approval-frame-image-button"
-                onClick={() =>
-                  setFrameLightbox({
-                    src: frameDataUrl(item.frame),
-                    title: `${item.app} @ ${item.timestamp}`,
-                  })
-                }
-                aria-label="View snapshot"
-              >
-                <img className="approval-frame-image" src={frameDataUrl(item.frame)} alt="" />
-              </button>
-              <div className="approval-frame-meta">
-                <span>{item.app}</span>
-                <span>{item.windowTitle}</span>
-              </div>
-              <label className="field-label" htmlFor={`approval-snap-ocr-${request.id}-${item.timestamp}`}>
-                OCR
-              </label>
-              <textarea
-                id={`approval-snap-ocr-${request.id}-${item.timestamp}`}
-                className="field-input approval-textarea approval-time-body-textarea"
-                value={item.ocrText}
-                onChange={(event) =>
-                  updateApprovalDraft(request.id, {
-                    ...payload,
-                    items: payload.items.map((row) =>
-                      row.timestamp === item.timestamp ? { ...row, ocrText: event.target.value } : row
-                    ),
-                  })
-                }
-              />
-            </article>
-          ))
-        )}
-      </div>
-    </div>
-  );
-
-  const renderApprovalCard = (request: ApprovalRequest) => {
-    const payload = approvalDrafts[request.id] || request.payload;
-    switch (payload.kind) {
-      case "day_list":
-        return renderDayListApproval(request, payload);
-      case "day_index":
-        return renderDayIndexApproval(request, payload);
-      case "chunk_context":
-        return renderChunkContextApproval(request, payload);
-      case "live_context":
-        return renderLiveContextApproval(request, payload);
-      case "live_frame":
-        return renderLiveFrameApproval(request, payload);
-      case "live_snapshots":
-        return renderLiveSnapshotsApproval(request, payload);
-    }
-  };
+  }, [refreshProcessingStatus]);
 
   return (
     <div className="app-shell">
@@ -1016,11 +359,11 @@ export default function App() {
             Controls
           </button>
           <button
-            className={`tab-button ${activeTab === "requests" ? "is-active" : ""}`}
-            onClick={() => setActiveTab("requests")}
+            className={`tab-button ${activeTab === "network" ? "is-active" : ""}`}
+            onClick={() => setActiveTab("network")}
             type="button"
           >
-            Requests{pendingCount > 0 ? ` (${pendingCount})` : ""}
+            Network
           </button>
           <button
             className={`tab-button ${activeTab === "settings" ? "is-active" : ""}`}
@@ -1032,7 +375,7 @@ export default function App() {
         </div>
 
         {error && <p className="banner banner-error">{error}</p>}
-        {approvalNotice && <p className="banner banner-info">{approvalNotice}</p>}
+        {settingsNotice && <p className="banner banner-info">{settingsNotice}</p>}
 
         {activeTab === "controls" && (
           <section className="panel">
@@ -1067,61 +410,105 @@ export default function App() {
           </section>
         )}
 
-        {activeTab === "requests" && (
+        {activeTab === "network" && (
           <section className="panel">
-            <div className="section-heading section-heading-row">
-              <div>
-                <p className="section-kicker">Approvals</p>
-                <h2 className="section-title">Pending requests</h2>
-              </div>
-              <div className="button-row">
-                <button className="button button-ghost" onClick={() => void refreshApprovalState()} type="button">
-                  Refresh
-                </button>
-                <button
-                  className="button button-secondary"
-                  onClick={() => void approveAll()}
-                  disabled={pendingCount === 0}
-                  type="button"
-                >
-                  Approve All
-                </button>
-              </div>
+            <div className="section-heading">
+              <h2 className="section-title">Network access</h2>
             </div>
 
-            <p className="support-copy">Pending Requests: {pendingCount}</p>
+            {!tailscaleStatus && (
+              <p className="support-copy">Checking Tailscale status...</p>
+            )}
 
-            {pendingCount === 0 && <p className="empty-state">No pending requests.</p>}
+            {tailscaleStatus && !tailscaleStatus.installed && (
+              <div className="info-card">
+                <p className="banner banner-warning">
+                  Tailscale is not installed. Install it from tailscale.com to share your context
+                  data with remote machines.
+                </p>
+              </div>
+            )}
 
-            <div className="request-list">
-              {pendingApprovals.map((request) => (
-                <article key={request.id} className="request-card approval-request-card">
-                  <div className="request-header">
-                    <div className="request-meta">
-                      <div className="request-title">{request.title || request.query}</div>
-                      <div className="request-date">{formatCreatedAt(request.createdAt)}</div>
-                    </div>
-                    <div className="button-row">
-                      <button
-                        className="button button-secondary"
-                        onClick={() => void resolveRequest(request, "approved")}
-                        type="button"
-                      >
-                        Approve
-                      </button>
-                      <button
-                        className="button button-ghost"
-                        onClick={() => void resolveRequest(request, "rejected")}
-                        type="button"
-                      >
-                        Reject
-                      </button>
-                    </div>
+            {tailscaleStatus && tailscaleStatus.installed && !tailscaleStatus.running && (
+              <div className="info-card">
+                <div className="info-block">
+                  <div className="info-label">Status</div>
+                  <div className="info-value">Tailscale is off</div>
+                </div>
+                <p className="support-copy">
+                  Start Tailscale from the menu bar to make your context accessible to remote machines.
+                </p>
+              </div>
+            )}
+
+            {tailscaleStatus && tailscaleStatus.running && (
+              <>
+                <div className="info-card">
+                  <div className="info-block">
+                    <div className="info-label">Hostname</div>
+                    <div className="info-value">{tailscaleStatus.hostname || "unknown"}</div>
                   </div>
-                  {renderApprovalCard(request)}
-                </article>
-              ))}
-            </div>
+                  <div className="info-block">
+                    <div className="info-label">Tailscale IP</div>
+                    <div className="info-value">{tailscaleStatus.tailscaleIp || "unknown"}</div>
+                  </div>
+                </div>
+
+                <div className="section-heading">
+                  <h2 className="section-title">
+                    Peers ({tailscaleStatus.peers.filter((p) => p.online).length} online)
+                  </h2>
+                </div>
+
+                {tailscaleStatus.peers.length === 0 ? (
+                  <p className="support-copy">No peers on your Tailscale network.</p>
+                ) : (
+                  <div className="peer-list">
+                    {tailscaleStatus.peers.map((peer) => (
+                      <div key={peer.tailscaleIp} className="peer-row">
+                        <span
+                          className={`peer-indicator ${peer.online ? "is-online" : "is-offline"}`}
+                        />
+                        <div className="peer-info">
+                          <div className="peer-hostname">{peer.hostname}</div>
+                          <div className="peer-detail">
+                            {peer.tailscaleIp} &middot; {peer.os}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {tailscaleStatus.tailscaleIp && (
+                  <>
+                    <div className="section-heading">
+                      <h2 className="section-title">Mount command</h2>
+                    </div>
+                    <p className="support-copy">
+                      Run this on your EC2 instance to mount your context directory (read-only):
+                    </p>
+                    <div className="mount-command">
+                      <code>
+                        sshfs $USER@{tailscaleStatus.tailscaleIp}:~/.context /mnt/context -o
+                        ro,reconnect
+                      </code>
+                      <button
+                        className="button button-ghost copy-button"
+                        onClick={() => {
+                          void navigator.clipboard.writeText(
+                            `sshfs $USER@${tailscaleStatus.tailscaleIp}:~/.context /mnt/context -o ro,reconnect`
+                          );
+                        }}
+                        type="button"
+                      >
+                        Copy
+                      </button>
+                    </div>
+                  </>
+                )}
+              </>
+            )}
           </section>
         )}
 
@@ -1240,82 +627,6 @@ export default function App() {
                 </>
               )}
 
-              <div className="section-heading">
-                <h2 className="section-title">Remote access</h2>
-              </div>
-
-              <label className="checkbox-row">
-                <input
-                  type="checkbox"
-                  checked={remoteAccessState.enabled}
-                  disabled={isTogglingRemoteAccess}
-                  onChange={(event) => {
-                    void setRemoteAccessEnabled(event.target.checked);
-                  }}
-                />
-                <span>Enable remote access</span>
-              </label>
-              <p className={`support-copy ${remoteStatusToneClass}`}>Status: {remoteStatusLine}</p>
-              <p className="support-copy">
-                Remote tool calls respect the approval queue. Keep the app open to
-                approve requests or enable auto-approve.
-              </p>
-              {remoteAccessState.error && <p className="banner banner-warning">{remoteAccessState.error}</p>}
-              {remoteAccessState.enabled && (
-                <div className="info-card">
-                  <div className="info-block">
-                    <div className="info-label">Remote MCP Endpoint</div>
-                    <div className="info-value">
-                      {remoteMcpEndpoint || "(waiting for MCP endpoint...)"}
-                    </div>
-                    <button
-                      className="button button-ghost"
-                      disabled={!remoteMcpEndpoint}
-                      onClick={() => void copyToClipboard(remoteMcpEndpoint)}
-                      type="button"
-                    >
-                      Copy MCP Endpoint
-                    </button>
-                  </div>
-                  <p className="support-copy">
-                    Use the endpoint above for Claude or any remote MCP client.
-                  </p>
-                </div>
-              )}
-
-              <div className="section-heading">
-                <h2 className="section-title">Approval settings</h2>
-              </div>
-
-              <label className="checkbox-row">
-                <input
-                  type="checkbox"
-                  checked={approvalSettings.autoApproveAllRequests}
-                  onChange={(event) =>
-                    setApprovalSettings((current) => ({
-                      ...current,
-                      autoApproveAllRequests: event.target.checked,
-                    }))
-                  }
-                />
-                <span>Auto-approve all requests</span>
-              </label>
-
-              <label className="field-label" htmlFor="approval-timeout">
-                Approval timeout (seconds)
-              </label>
-              <input
-                id="approval-timeout"
-                className="field-input field-input-small"
-                type="number"
-                min={5}
-                value={settingsTimeoutSeconds}
-                onChange={(event) => {
-                  const next = Number(event.target.value);
-                  setSettingsTimeoutSeconds(Number.isFinite(next) ? next : 120);
-                }}
-              />
-
               <div>
                 <button className="button button-primary" onClick={() => void saveAllSettings()} type="button">
                   Save Settings
@@ -1330,43 +641,19 @@ export default function App() {
         <div className="app-frame">
           <div className="hero-meta">
             <span className={`status-pill ${statusToneClass}`}>{statusLine}</span>
-            <span className={`status-pill ${remoteStatusToneClass}`}>Remote: {remoteStatusLine}</span>
+            {tailscaleStatus?.running && (
+              <span
+                className={`status-pill ${
+                  tailscaleStatus.peers.some((p) => p.online) ? "tone-ready" : "tone-muted"
+                }`}
+              >
+                TS: {tailscaleStatus.peers.filter((p) => p.online).length} peer
+                {tailscaleStatus.peers.filter((p) => p.online).length === 1 ? "" : "s"}
+              </span>
+            )}
           </div>
         </div>
       </div>
-
-      {frameLightbox ? (
-        <div
-          className="frame-lightbox-overlay"
-          role="presentation"
-          onClick={() => setFrameLightbox(null)}
-        >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="frame-lightbox-title"
-            className="frame-lightbox-dialog"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <button
-              type="button"
-              className="frame-lightbox-close"
-              onClick={() => setFrameLightbox(null)}
-              aria-label="Close"
-            >
-              Close
-            </button>
-            <img
-              className="frame-lightbox-image"
-              src={frameLightbox.src}
-              alt={frameLightbox.title}
-            />
-            <p id="frame-lightbox-title" className="frame-lightbox-caption">
-              {frameLightbox.title}
-            </p>
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }

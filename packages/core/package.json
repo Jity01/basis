@@ -8,7 +8,6 @@
     "build": "tsc",
     "dev": "tsc --watch",
     "tag-test": "node ./tests/run-tag-chunk.mjs",
-    "search-test": "node ./tests/run-searcher.mjs",
     "backfill-summary": "node ./scripts/backfill-summary-from-index.mjs"
   },
   "dependencies": {

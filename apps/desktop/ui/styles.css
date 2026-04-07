@@ -814,6 +814,72 @@ select.field-input option {
   color: var(--headline);
 }
 
+/* ── Network / Tailscale ── */
+
+.peer-list {
+  display: grid;
+  gap: 10px;
+}
+
+.peer-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface-muted);
+}
+
+.peer-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.peer-indicator.is-online {
+  background: var(--accent);
+}
+
+.peer-indicator.is-offline {
+  background: var(--text-muted);
+}
+
+.peer-info {
+  min-width: 0;
+  flex: 1;
+}
+
+.peer-hostname {
+  color: var(--headline);
+  font-weight: 500;
+}
+
+.peer-detail {
+  color: var(--text-muted);
+  font-size: 0.88rem;
+}
+
+.mount-command {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface-muted);
+}
+
+.mount-command code {
+  flex: 1;
+  word-break: break-all;
+}
+
+.copy-button {
+  flex-shrink: 0;
+}
+
 /* ── Frame preview lightbox ── */
 
 .frame-lightbox-overlay {
