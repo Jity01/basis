@@ -539,14 +539,6 @@ export default function App() {
     [exclusions.bundle_ids, updateExclusionEntries]
   );
 
-  const removeExclusion = useCallback(
-    async (bundleId: string) => {
-      const nextEntries = exclusions.bundle_ids.filter((entry) => entry.bundle_id !== bundleId);
-      await updateExclusionEntries(nextEntries, "Excluded windows updated. Restart required.");
-    },
-    [exclusions.bundle_ids, updateExclusionEntries]
-  );
-
   const addExclusion = useCallback(
     async (entry: { bundleId: string; name: string }) => {
       const normalized = entry.bundleId.trim();
@@ -1339,17 +1331,6 @@ export default function App() {
                       />
                       <span>{entry.enabled ? "Enabled" : "Disabled"}</span>
                     </label>
-                    {!entry.is_default && (
-                      <button
-                        className="button button-ghost"
-                        type="button"
-                        onClick={() => {
-                          void removeExclusion(entry.bundle_id);
-                        }}
-                      >
-                        Remove
-                      </button>
-                    )}
                   </article>
                 ))}
               </div>
