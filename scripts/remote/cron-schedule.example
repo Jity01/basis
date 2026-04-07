@@ -1,0 +1,12 @@
+# Tailscale + SSHFS schedule
+# Install with: crontab -e (then paste the relevant lines)
+#
+# === Mac (context provider) ===
+# Connect at 9am, disconnect at 6pm (weekdays)
+# 0 9 * * 1-5  /usr/local/bin/tailscale up
+# 0 18 * * 1-5 /usr/local/bin/tailscale down
+#
+# === EC2 (context consumer) ===
+# Mount 5 min after Tailscale is up, unmount before it goes down
+# 5 9 * * 1-5  /path/to/mount-context.sh 100.x.y.z your-mac-user
+# 55 17 * * 1-5 /path/to/unmount-context.sh

@@ -1,80 +1,117 @@
 # Context Manager
 
-Personal, local-first screen recording tool that captures your screen, tags each segment with either **Fireworks** or a local **Ollama** model, and stores structured summaries + frames in a filesystem that AI agents can easily search.
+Personal, local-first screen recording tool that captures your screen, tags each segment with either **Fireworks** or a local **Ollama** model, and stores structured summaries + frames in `~/.context/`. Remote AI agents access the data by mounting this directory over the network via **Tailscale + SSHFS**.
 
-## Project Structure
+## How It Works
 
-```
-context-manager/
-├── apps/
-│   └── desktop/          # Electron app
-├── packages/
-│   ├── config/           # Shared config (CONTEXT_ROOT, etc.)
-│   └── core/             # Recording, tagging, storage logic
-```
-
-## Requirements
-
-- **Node.js** 18+
-- **pnpm** 9.x (`npm install -g pnpm`)
-- **ffmpeg** — used for frame extraction. **Development:** install `ffmpeg` and `ffprobe` on your `PATH` (e.g. macOS: `brew install ffmpeg`). **Packaged desktop app:** `pnpm --filter @context-manager/desktop dist` / `dist:dir` runs scripts that stage `ffmpeg`, `ffprobe` (via [ffmpeg-static](https://www.npmjs.com/package/ffmpeg-static) / [ffprobe-static](https://www.npmjs.com/package/ffprobe-static)) into the app bundle; the Electron main process sets `CONTEXT_MANAGER_*` env vars so processing does not rely on system installs. Redistributing those binaries may be subject to their respective licenses.
-- **Fireworks** or **Ollama**
-- Fireworks mode uses `FIREWORKS_API_KEY` and the existing optional `FIREWORKS_BASE_URL` / `FIREWORKS_MODEL` env vars.
-- Local mode uses Ollama running on `http://127.0.0.1:11434` and the app stores a normalized OpenAI-compatible base URL such as `http://127.0.0.1:11434/v1`.
-- In the desktop app, open `Settings` and choose either `Fireworks` or `Local (Ollama)`.
+1. **Record** — the desktop app captures your screen, rotating into 5-minute chunks
+2. **Tag** — each chunk is sent to a vision model (Fireworks or Ollama) that writes a summary
+3. **Store** — tagged summaries, metadata, and representative frames are saved to `~/.context/YYYY/MM/DD/HH-MM/`
+4. **Access** — a remote machine (e.g. EC2) mounts `~/.context/` read-only via SSHFS over Tailscale and reads the files directly
 
 ## Quick Start
 
 ```bash
-# Install dependencies
+# Install dependencies (requires pnpm 9.x, Node 18+)
 pnpm install
 
 # Run the Electron app (dev mode)
 pnpm dev
 ```
 
-This opens an Electron window with the Context Manager UI. Imports from `@context-manager/core` and `@context-manager/config` work without errors (check the terminal for logs).
+### Configure AI tagging
 
-## Desktop packaging
+Open the **Settings** tab in the app and choose a provider:
 
-From the repo root, after `pnpm install`:
+- **Fireworks** — set `FIREWORKS_API_KEY` in `.env` or paste it in Settings
+- **Local (Ollama)** — have Ollama running at `http://127.0.0.1:11434` with a vision-capable model
+
+### Start recording
+
+Click **Start Recording** in the Controls tab. The app captures your screen, rotates files every N minutes (configurable in Settings), and processes the backlog automatically when your machine is idle.
+
+## Remote Access (Tailscale + SSHFS)
+
+The **Network** tab in the app shows your Tailscale status, IP, and connected peers. When Tailscale is running, it also shows a ready-to-copy SSHFS mount command.
+
+### Mac setup (context provider)
+
+1. Install [Tailscale](https://tailscale.com/download) and sign in
+2. Enable **Remote Login** in System Settings > General > Sharing (this enables SSH)
+3. Run the Context Manager desktop app — the Network tab shows your Tailscale IP
+
+### EC2 setup (context consumer)
+
+Run the one-time setup script:
 
 ```bash
-# Unpacked app (fast to iterate; output under apps/desktop/release/)
-pnpm --filter @context-manager/desktop dist:dir
-
-# Platform installers (DMG / ZIP on macOS, per apps/desktop/electron-builder.yml)
-pnpm --filter @context-manager/desktop dist
+# Installs Tailscale, SSHFS, creates /mnt/context
+./scripts/remote/setup-ec2.sh
 ```
 
-`pnpm install` runs a small **postinstall** that installs a pinned Ajv 6 under `apps/desktop/vendor/ajv-for-electron-builder` (via `npm ci`) and symlinks it for `electron-builder`. **npm** must be on your PATH for that step.
+Then mount your Mac's context directory:
 
-**Bundled binaries (packaged app only):** `build:desktop` runs `build:binaries`, which stages `ffmpeg` and `ffprobe` under `apps/desktop/resources/` (gitignored) before `electron-builder` packs them into `extraResources`. Dev mode (`pnpm dev`) does not set these; use a system `ffmpeg` on `PATH` as usual.
+```bash
+# Replace with your Mac's Tailscale IP and username
+./scripts/remote/mount-context.sh 100.x.y.z your-mac-user
+```
 
-## How to Test
+The mount is **read-only** — the EC2 instance can read all your summaries, metadata, and frames but cannot modify them. To unmount:
 
-1. Run `pnpm dev` — Electron window opens with the Context Manager UI.
-2. Click **Start Recording** — timer starts, screen is captured.
-3. Wait 6+ minutes (or just a few seconds for a quick test).
-4. Click **Stop Recording**.
-5. Verify `~/.context/.tmp/` contains `.webm` files (one per chunk + partial).
-6. Files should play in a video player.
+```bash
+./scripts/remote/unmount-context.sh
+```
 
-**Tagging test:**
+### Scheduling access
 
-1. For Fireworks mode, set **`FIREWORKS_API_KEY`** in **`.env`**. For local mode, make sure Ollama is running and pick a vision-capable local tagging model in the desktop app settings.
-2. Build core: `pnpm --filter @context-manager/core build`
-3. Run `pnpm --filter @context-manager/core tag-test -- /path/to/recording.webm`
-4. Verify: non-empty summary text that references real on-screen content.
+Toggle access by turning Tailscale on/off from the menu bar, or automate it with cron. See `scripts/remote/cron-schedule.example` for a template that enables access 9am-6pm on weekdays.
+
+### What the remote machine sees
+
+```
+/mnt/context/
+├── 2026/04/07/
+│   ├── 14-30/
+│   │   ├── summary.txt    # AI-generated summary of this 5-min chunk
+│   │   ├── meta.json      # Timestamps, durations, frame counts
+│   │   └── frames/        # 5 representative JPEGs
+│   ├── 14-35/
+│   └── ...
+├── .hotbuffer/             # Live screenshots (last 60s, updated every 2s)
+└── ai-settings.json        # Current AI provider config
+```
+
+## Requirements
+
+- **Node.js** 18+
+- **pnpm** 9.x (`npm install -g pnpm`)
+- **ffmpeg** — install on your `PATH` for dev (`brew install ffmpeg` on macOS). Packaged builds bundle it automatically.
+- **Tailscale** — for remote access (optional, only needed if sharing context with a remote machine)
+- **Fireworks** or **Ollama** — for AI tagging
+
+## Project Structure
+
+```
+context-manager/
+├── apps/desktop/           # Electron app (main + renderer)
+├── packages/config/        # Shared constants (CONTEXT_ROOT, etc.)
+├── packages/core/          # Recording, tagging, storage logic
+└── scripts/remote/         # EC2 setup + mount scripts
+```
+
+## Desktop Packaging
+
+```bash
+# Unpacked app (fast iteration)
+pnpm --filter @context-manager/desktop dist:dir
+
+# Platform installers (DMG/ZIP on macOS)
+pnpm --filter @context-manager/desktop dist
+```
 
 ## Build (Production)
 
 ```bash
 pnpm build
-```
-
-Then run the desktop app:
-
-```bash
 cd apps/desktop && electron .
 ```
