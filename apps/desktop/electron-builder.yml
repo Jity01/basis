@@ -38,6 +38,10 @@ extraResources:
     to: ocr-bin
     filter:
       - "**/*"
+  - from: resources/sckit-bin
+    to: sckit-bin
+    filter:
+      - "**/*"
 
 asar: true
 # sharp loads libvips from @img/sharp-libvips-* via dlopen; those paths break inside
