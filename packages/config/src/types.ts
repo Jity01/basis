@@ -170,6 +170,36 @@ export type UserProfile = {
   week_summary: string;
 };
 
+// ── Rolling Context (agent-facing L0/L1) ─────────────────────────────────────
+
+export type RollingContext = {
+  updated_at: string;
+  active_projects: Array<{
+    name: string;
+    last_seen: string;
+    topics: string[];
+    sessions_this_week: number;
+  }>;
+  recent_threads: Array<{
+    description: string;
+    last_active: string;
+    status: "active" | "stale";
+  }>;
+  last_session: {
+    date: string;
+    time: string;
+    primary_intent: string;
+    topics: string[];
+    apps: string[];
+  } | null;
+  daily_pattern: {
+    typical_start: string;
+    typical_end: string;
+    most_used_apps: string[];
+  };
+  week_summary: string;
+};
+
 // ── Searcher ─────────────────────────────────────────────────────────────────
 
 export type DaySummary = {

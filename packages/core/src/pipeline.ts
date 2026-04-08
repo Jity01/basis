@@ -15,6 +15,8 @@ import { deleteRawVideo, moveRawVideoToFailed, storeChunk, appendToCatalog, CATA
 import { tagChunk, extractChunkMetadata } from "./tagger";
 import { computeSessions } from "./sessions";
 import { updateProfile } from "./profile";
+import { openIndex, indexChunk } from "./indexer";
+import { updateContext } from "./context";
 
 export type { ProcessBacklogProgress, ProcessBacklogOptions } from "@context-manager/config";
 
@@ -253,8 +255,20 @@ export async function processBacklog(
         const raw = await fs.readFile(catalogPath, "utf8");
         const catalog = JSON.parse(raw) as import("@context-manager/config").DayCatalog;
         if (Array.isArray(catalog.chunks) && catalog.chunks.length > 0) {
+          // Index chunks in SQLite
+          const db = openIndex(CONTEXT_ROOT);
+          try {
+            for (const chunk of catalog.chunks) {
+              indexChunk(db, chunk);
+            }
+          } finally {
+            db.close();
+          }
+
+          // Compute sessions and update context
           const daySessions = await computeSessions(catalog, CONTEXT_ROOT, options.aiSettings);
           await updateProfile(daySessions);
+          await updateContext(daySessions, CONTEXT_ROOT);
         }
       } catch {
         // Catalog may not exist yet for this day

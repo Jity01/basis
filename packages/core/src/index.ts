@@ -10,3 +10,5 @@ export * from "./hotbuffer";
 export * from "./exclusions";
 export * from "./sessions";
 export * from "./profile";
+export * from "./indexer";
+export * from "./context";
