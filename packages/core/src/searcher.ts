@@ -1,10 +1,10 @@
 import * as fs from "fs/promises";
 import * as path from "path";
 import { CONTEXT_ROOT } from "@context-manager/config";
-import type { DaySummary, DayIndex, ChunkFrame, ChunkContext } from "@context-manager/config";
-import { SUMMARY_FILE_NAME } from "./storage";
+import type { DaySummary, DayIndex, ChunkFrame, ChunkContext, DayCatalog } from "@context-manager/config";
+import { SUMMARY_FILE_NAME, CATALOG_FILE_NAME } from "./storage";
 
-export type { DaySummary, DayIndex, ChunkFrame, ChunkContext } from "@context-manager/config";
+export type { DaySummary, DayIndex, ChunkFrame, ChunkContext, DayCatalog } from "@context-manager/config";
 
 const DEFAULT_LIST_DAYS_LIMIT = 30;
 const META_FILE_NAME = "meta.json";
@@ -229,6 +229,26 @@ export async function getDayIndex(
     chunkKeys,
     indexText,
   };
+}
+
+/** Read the structured catalog for a day, or null if not available. */
+export async function readDayCatalog(
+  date: string,
+  contextRoot: string = CONTEXT_ROOT
+): Promise<DayCatalog | null> {
+  const normalizedDate = `${parseDate(date).year}-${parseDate(date).month}-${parseDate(date).day}`;
+  const dayDir = dayPathFromDate(normalizedDate, contextRoot);
+  const catalogPath = path.join(dayDir, CATALOG_FILE_NAME);
+  try {
+    const raw = await fs.readFile(catalogPath, "utf8");
+    const catalog = JSON.parse(raw) as DayCatalog;
+    if (Array.isArray(catalog.chunks)) {
+      return catalog;
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 export async function getChunkContext(

@@ -8,3 +8,5 @@ export * from "./aiSettings";
 export * from "./chunkSettings";
 export * from "./hotbuffer";
 export * from "./exclusions";
+export * from "./sessions";
+export * from "./profile";

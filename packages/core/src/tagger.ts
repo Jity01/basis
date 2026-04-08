@@ -1,7 +1,7 @@
 import "./loadRepoEnv";
 import * as fs from "fs/promises";
 import * as path from "path";
-import type { AISettings } from "./aiSettings";
+import type { AISettings, ChunkMetadata } from "@context-manager/config";
 
 const DEFAULT_MODEL =
   process.env.FIREWORKS_MODEL?.trim() ||
@@ -173,4 +173,133 @@ export async function tagChunk(
   }
 
   return responseContent;
+}
+
+function buildMetadataExtractionPrompt(
+  summary: string,
+  numFrames: number,
+  startTime: string,
+  endTime: string
+): string {
+  return `You are a screen activity metadata extractor. You have already summarized
+a screen recording chunk (${startTime} to ${endTime}, ${numFrames} frames).
+
+Here is the prose summary:
+"${summary}"
+
+Now extract structured metadata from the screenshots AND the summary above.
+Return ONLY valid JSON matching this exact schema (no markdown, no explanation):
+
+{
+  "activities": [
+    {
+      "type": "coding" | "browsing" | "communication" | "reading" | "design" | "terminal" | "other",
+      "description": "One sentence describing this discrete activity",
+      "app": "Primary application name",
+      "topics": ["lowercase", "topic", "tags"],
+      "duration_pct": 0-100
+    }
+  ],
+  "entities": ["Specific files, URLs, people, projects, error messages observed on screen"],
+  "apps": [
+    {
+      "name": "Application name",
+      "window_titles": ["Observed window title strings"],
+      "duration_pct": 0-100
+    }
+  ],
+  "primary_intent": "One sentence: what the user was trying to accomplish",
+  "context_switches": 0
+}
+
+RULES:
+- "activities" should list each distinct thing the user did (1-4 items typically).
+- "type" must be one of: coding, browsing, communication, reading, design, terminal, other.
+- "topics" should be lowercase, specific tags useful for filtering (e.g. "react", "auth-flow", "debugging").
+- "entities" should name real things seen on screen: filenames, URLs, people, projects, error messages.
+- "apps" lists applications visible with their window titles.
+- "duration_pct" values across activities (or apps) should roughly sum to 100.
+- "context_switches" counts how many times the user shifted between unrelated tasks.
+- "primary_intent" is the single most important thing the user was trying to do.
+`;
+}
+
+const DEFAULT_CHUNK_METADATA: ChunkMetadata = {
+  activities: [],
+  entities: [],
+  apps: [],
+  primary_intent: "",
+  context_switches: 0,
+};
+
+/**
+ * Pass 2: Extract structured metadata from frames + the prose summary.
+ * Returns metadata fields only (summary comes from tagChunk pass 1).
+ */
+export async function extractChunkMetadata(
+  summary: string,
+  framePaths: string[],
+  startTime: string,
+  endTime: string,
+  settings?: AISettings
+): Promise<ChunkMetadata> {
+  const numFrames = framePaths.length;
+  const promptText = buildMetadataExtractionPrompt(summary, numFrames, startTime, endTime);
+
+  const content: VisionContentPart[] = [];
+
+  for (const fp of framePaths) {
+    const buf = await fs.readFile(fp);
+    const b64 = buf.toString("base64");
+    const mediaType = mimeForPath(fp);
+    content.push({
+      type: "image_url",
+      image_url: {
+        url: `data:${mediaType};base64,${b64}`,
+      },
+    });
+  }
+  content.push({ type: "text", text: promptText });
+
+  try {
+    const response = await fetch(getTaggingUrl(settings), {
+      method: "POST",
+      headers: getTaggingHeaders(settings),
+      body: JSON.stringify({
+        model: getTaggingModel(settings),
+        max_tokens: 4096,
+        messages: [{ role: "user", content }],
+      }),
+    });
+
+    if (!response.ok) {
+      const body = await response.text();
+      console.error(`[tagger] metadata extraction HTTP ${response.status}: ${body}`);
+      return { ...DEFAULT_CHUNK_METADATA };
+    }
+
+    const json = (await response.json()) as {
+      choices?: Array<{ message?: { content?: string | null } }>;
+    };
+    const raw = json.choices?.[0]?.message?.content?.trim() ?? "";
+    if (!raw) {
+      return { ...DEFAULT_CHUNK_METADATA };
+    }
+
+    // Strip markdown code fences if the model wraps its output
+    const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+    const parsed = JSON.parse(cleaned) as Partial<ChunkMetadata>;
+
+    return {
+      activities: Array.isArray(parsed.activities) ? parsed.activities : [],
+      entities: Array.isArray(parsed.entities) ? parsed.entities : [],
+      apps: Array.isArray(parsed.apps) ? parsed.apps : [],
+      primary_intent: typeof parsed.primary_intent === "string" ? parsed.primary_intent : "",
+      context_switches: typeof parsed.context_switches === "number" ? parsed.context_switches : 0,
+    };
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error(`[tagger] metadata extraction failed: ${msg}`);
+    return { ...DEFAULT_CHUNK_METADATA };
+  }
 }

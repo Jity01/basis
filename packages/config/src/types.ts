@@ -70,6 +70,106 @@ export type ProcessBacklogOptions = {
   aiSettings?: AISettings;
 };
 
+// ── Chunk Analysis (structured tagger output) ───────────────────────────────
+
+export type ActivityType = "coding" | "browsing" | "communication" | "reading" | "design" | "terminal" | "other";
+
+export type Activity = {
+  type: ActivityType;
+  description: string;
+  app: string;
+  topics: string[];
+  duration_pct: number;
+};
+
+export type AppContext = {
+  name: string;
+  window_titles: string[];
+  duration_pct: number;
+};
+
+export type ChunkMetadata = {
+  activities: Activity[];
+  entities: string[];
+  apps: AppContext[];
+  primary_intent: string;
+  context_switches: number;
+};
+
+export type ChunkAnalysis = ChunkMetadata & {
+  summary: string;
+};
+
+// ── Catalog (per-day chunk index) ────────────────────────────────────────────
+
+export type CatalogEntry = {
+  time: string;
+  chunk_key: string;
+  primary_intent: string;
+  activities: string[];
+  apps: string[];
+  topics: string[];
+  entities: string[];
+  context_switches: number;
+  summary_preview: string;
+};
+
+export type DayCatalog = {
+  date: string;
+  chunks: CatalogEntry[];
+};
+
+// ── Sessions ─────────────────────────────────────────────────────────────────
+
+export type Session = {
+  id: string;
+  date: string;
+  start_time: string;
+  end_time: string;
+  chunk_keys: string[];
+  duration_minutes: number;
+  primary_intent: string;
+  topics: string[];
+  apps: string[];
+  activity_types: ActivityType[];
+  summary: string;
+};
+
+export type DaySessions = {
+  date: string;
+  sessions: Session[];
+};
+
+// ── Profile (precomputed agent context) ──────────────────────────────────────
+
+export type ActiveProject = {
+  name: string;
+  last_seen: string;
+  topics: string[];
+  recent_files: string[];
+  sessions_this_week: number;
+};
+
+export type ActiveThread = {
+  description: string;
+  started: string;
+  last_active: string;
+  status: "in_progress" | "stale" | "completed";
+  related_sessions: string[];
+};
+
+export type UserProfile = {
+  updated_at: string;
+  active_projects: ActiveProject[];
+  active_threads: ActiveThread[];
+  daily_pattern: {
+    typical_start: string;
+    typical_end: string;
+    most_used_apps: string[];
+  };
+  week_summary: string;
+};
+
 // ── Searcher ─────────────────────────────────────────────────────────────────
 
 export type DaySummary = {

@@ -16,7 +16,7 @@ function ffprobeBin(): string {
   return process.env.CONTEXT_MANAGER_FFPROBE_BIN?.trim() || "ffprobe";
 }
 
-/** Latest `extractFrames` output: `~/.context/.tmp/extracted-frames/` (overwritten each run). */
+/** Latest `extractFrames` output: `~/context/.tmp/extracted-frames/` (overwritten each run). */
 export const EXTRACTED_FRAMES_DIR = path.join(
   CONTEXT_ROOT,
   ".tmp",

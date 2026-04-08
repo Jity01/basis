@@ -4,7 +4,7 @@ import * as os from "os";
 export * from "./types";
 
 export const CONTEXT_ROOT =
-  process.env.CONTEXT_ROOT || path.join(os.homedir(), ".context");
+  process.env.CONTEXT_ROOT || path.join(os.homedir(), "context");
 export const BASIS_ROOT =
   process.env.BASIS_ROOT || path.join(os.homedir(), ".basis");
 export const CHUNK_DURATION_MS = 300_000; // 5 minutes
@@ -17,7 +17,7 @@ export const PIPELINE_CONCURRENCY = 10;
 export const MAX_RETRIES = 2;
 export const RETRY_DELAY_MS = 1000;
 
-/** Rolling live screen buffer (`.context/.hotbuffer/`) — decoupled from chunk pipeline. */
+/** Rolling live screen buffer (`context/.hotbuffer/`) — decoupled from chunk pipeline. */
 export const HOT_BUFFER_CONFIG = {
   captureIntervalMs: 2000,
   maxEntries: 30,

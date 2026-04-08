@@ -19,5 +19,8 @@
   "packageManager": "pnpm@9.14.2",
   "engines": {
     "node": ">=18"
+  },
+  "dependencies": {
+    "@fission-ai/openspec": "^1.2.0"
   }
 }

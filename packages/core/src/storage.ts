@@ -1,6 +1,7 @@
 import * as fs from "fs/promises";
 import * as path from "path";
 import { CONTEXT_ROOT } from "@context-manager/config";
+import type { CatalogEntry, DayCatalog, ChunkMetadata } from "@context-manager/config";
 
 const FRAMES_DIR_NAME = "frames";
 const META_FILE_NAME = "meta.json";
@@ -21,7 +22,7 @@ function chunkDirFromTimestamp(timestamp: Date): string {
   return path.join(CONTEXT_ROOT, yyyy, mm, dd, `${hh}-${min}`);
 }
 
-/** Write one processed chunk to `~/.context/YYYY/MM/DD/HH-MM/`. */
+/** Write one processed chunk to `~/context/YYYY/MM/DD/HH-MM/`. */
 export async function storeChunk(
   timestamp: Date,
   summary: string,
@@ -55,6 +56,76 @@ export async function storeChunk(
   }
 
   return chunkDir;
+}
+
+const CATALOG_FILE_NAME = "catalog.json";
+export { CATALOG_FILE_NAME };
+
+function dayDirFromTimestamp(timestamp: Date): string {
+  const yyyy = String(timestamp.getFullYear());
+  const mm = pad2(timestamp.getMonth() + 1);
+  const dd = pad2(timestamp.getDate());
+  return path.join(CONTEXT_ROOT, yyyy, mm, dd);
+}
+
+function formatDate(timestamp: Date): string {
+  const yyyy = String(timestamp.getFullYear());
+  const mm = pad2(timestamp.getMonth() + 1);
+  const dd = pad2(timestamp.getDate());
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function formatTime(timestamp: Date): string {
+  return `${pad2(timestamp.getHours())}:${pad2(timestamp.getMinutes())}`;
+}
+
+function formatChunkKey(timestamp: Date): string {
+  return `${formatDate(timestamp)}/${pad2(timestamp.getHours())}-${pad2(timestamp.getMinutes())}`;
+}
+
+/** Append a chunk entry to the day's catalog.json. Creates the file if it doesn't exist. */
+export async function appendToCatalog(
+  timestamp: Date,
+  summary: string,
+  meta: ChunkMetadata
+): Promise<void> {
+  const dayDir = dayDirFromTimestamp(timestamp);
+  const catalogPath = path.join(dayDir, CATALOG_FILE_NAME);
+
+  let catalog: DayCatalog;
+  try {
+    const raw = await fs.readFile(catalogPath, "utf8");
+    catalog = JSON.parse(raw) as DayCatalog;
+    if (!Array.isArray(catalog.chunks)) {
+      catalog.chunks = [];
+    }
+  } catch {
+    catalog = { date: formatDate(timestamp), chunks: [] };
+  }
+
+  const chunkKey = formatChunkKey(timestamp);
+  const time = formatTime(timestamp);
+
+  // Remove existing entry for this chunk (in case of reprocessing)
+  catalog.chunks = catalog.chunks.filter((c) => c.chunk_key !== chunkKey);
+
+  const entry: CatalogEntry = {
+    time,
+    chunk_key: chunkKey,
+    primary_intent: meta.primary_intent,
+    activities: meta.activities.map((a) => `${a.type}:${a.topics.join(":")}`),
+    apps: meta.apps.map((a) => a.name),
+    topics: Array.from(new Set(meta.activities.flatMap((a) => a.topics))),
+    entities: meta.entities,
+    context_switches: meta.context_switches,
+    summary_preview: summary.length > 200 ? `${summary.slice(0, 200)}...` : summary,
+  };
+
+  catalog.chunks.push(entry);
+  catalog.chunks.sort((a, b) => a.time.localeCompare(b.time));
+
+  await fs.mkdir(dayDir, { recursive: true });
+  await fs.writeFile(catalogPath, `${JSON.stringify(catalog, null, 2)}\n`, "utf8");
 }
 
 const FAILED_DIR_NAME = ".failed";
@@ -104,7 +175,7 @@ export async function moveRawVideoToFailed(videoPath: string, err: unknown): Pro
   );
 }
 
-/** Delete a raw recording file that lives under `~/.context/.tmp/`. */
+/** Delete a raw recording file that lives under `~/context/.tmp/`. */
 export async function deleteRawVideo(videoPath: string): Promise<void> {
   const tmpDir = path.resolve(path.join(CONTEXT_ROOT, ".tmp"));
   const resolvedVideoPath = path.resolve(videoPath);

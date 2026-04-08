@@ -11,8 +11,10 @@ import {
 import type { AISettings, ProcessBacklogProgress, ProcessBacklogOptions } from "@context-manager/config";
 import { extractFrames, selectRepresentativeFrames } from "./frames";
 import { readChunkDurationMsForFile } from "./recorder";
-import { deleteRawVideo, moveRawVideoToFailed, storeChunk } from "./storage";
-import { tagChunk } from "./tagger";
+import { deleteRawVideo, moveRawVideoToFailed, storeChunk, appendToCatalog, CATALOG_FILE_NAME } from "./storage";
+import { tagChunk, extractChunkMetadata } from "./tagger";
+import { computeSessions } from "./sessions";
+import { updateProfile } from "./profile";
 
 export type { ProcessBacklogProgress, ProcessBacklogOptions } from "@context-manager/config";
 
@@ -116,13 +118,23 @@ async function processOneChunk(
   const chunkStart = item.chunkStart;
   const chunkEnd = new Date(chunkStart.getTime() + item.chunkDurationMs);
 
+  const startTimeStr = hhmmss(chunkStart);
+  const endTimeStr = hhmmss(chunkEnd);
+
   const allFrames = await extractFrames(item.filePath, FRAMES_PER_CHUNK);
-  const summary = await tagChunk(
+
+  // Pass 1: prose summary (unchanged from original)
+  const summary = await tagChunk(allFrames, startTimeStr, endTimeStr, aiSettings);
+
+  // Pass 2: structured metadata extraction
+  const metadata = await extractChunkMetadata(
+    summary,
     allFrames,
-    hhmmss(chunkStart),
-    hhmmss(chunkEnd),
+    startTimeStr,
+    endTimeStr,
     aiSettings
   );
+
   const representativeFrames = selectRepresentativeFrames(allFrames, FRAMES_TO_KEEP);
 
   await storeChunk(
@@ -137,10 +149,12 @@ async function processOneChunk(
       processed_at_iso: new Date().toISOString(),
       frames_extracted: allFrames.length,
       frames_stored: representativeFrames.length,
+      ...metadata,
     },
     representativeFrames
   );
 
+  await appendToCatalog(chunkStart, summary, metadata);
   await deleteRawVideo(item.filePath);
 }
 
@@ -166,7 +180,7 @@ async function processChunkWithRetry(
 }
 
 /**
- * Process all unprocessed raw chunk files in `~/.context/.tmp/` (except current).
+ * Process all unprocessed raw chunk files in `~/context/.tmp/` (except current).
  * Chunks are processed in parallel batches (concurrency-limited). Each chunk is independent.
  * Can be paused via `shouldContinue`; reruns will resume from remaining files.
  */
@@ -223,4 +237,28 @@ export async function processBacklog(
   }
 
   options.onProgress?.({ phase: "done", total, completed });
+
+  // Post-processing: compute sessions for affected days
+  if (completed > 0) {
+    const affectedDates = new Set<string>();
+    for (const item of backlog) {
+      const d = item.chunkStart;
+      const dateStr = `${String(d.getFullYear())}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+      affectedDates.add(dateStr);
+    }
+    for (const date of Array.from(affectedDates)) {
+      try {
+        const [yyyy, mm, dd] = date.split("-");
+        const catalogPath = path.join(CONTEXT_ROOT, yyyy!, mm!, dd!, CATALOG_FILE_NAME);
+        const raw = await fs.readFile(catalogPath, "utf8");
+        const catalog = JSON.parse(raw) as import("@context-manager/config").DayCatalog;
+        if (Array.isArray(catalog.chunks) && catalog.chunks.length > 0) {
+          const daySessions = await computeSessions(catalog, CONTEXT_ROOT, options.aiSettings);
+          await updateProfile(daySessions);
+        }
+      } catch {
+        // Catalog may not exist yet for this day
+      }
+    }
+  }
 }
