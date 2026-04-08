@@ -1,89 +1,36 @@
 import { randomUUID } from "crypto";
+import type {
+  ApprovalStatus,
+  ApprovalResolution,
+  ApprovalKind,
+  ApprovalPayload,
+  ApprovalRequest,
+  ApprovalSettings,
+  DayListApprovalPayload,
+  DayIndexApprovalPayload,
+  ChunkContextApprovalPayload,
+  LiveContextApprovalPayload,
+  LiveFrameApprovalPayload,
+  LiveSnapshotsApprovalPayload,
+} from "@context-manager/config";
 
-export type ApprovalStatus = "approved" | "rejected" | "timeout";
-export type ApprovalResolution = "approved" | "rejected";
-export type ApprovalKind = "day_list" | "day_index" | "chunk_context" | "live_context" | "live_frame" | "live_snapshots";
-
-export type DayListApprovalDay = {
-  date: string;
-  chunkCount: number;
-  firstChunkTime: string | null;
-  lastChunkTime: string | null;
-  hasIndex: boolean;
-};
-
-export type DayListApprovalPayload = {
-  kind: "day_list";
-  days: DayListApprovalDay[];
-};
-
-export type DayIndexApprovalPayload = {
-  kind: "day_index";
-  date: string;
-  chunkCount: number;
-  chunkKeys: string[];
-  indexText: string;
-};
-
-export type ApprovalFrame = {
-  name: string;
-  mimeType: string;
-  data: string;
-};
-
-export type ChunkContextApprovalPayload = {
-  kind: "chunk_context";
-  chunkKey: string;
-  date: string;
-  time: string;
-  summaryText: string;
-  metaText: string;
-  frames: ApprovalFrame[];
-};
-
-export type LiveContextApprovalPayload = {
-  kind: "live_context";
-  timelineText: string;
-};
-
-export type LiveFrameApprovalPayload = {
-  kind: "live_frame";
-  timestamp: number;
-  mimeType: string;
-  data: string;
-};
-
-export type LiveSnapshotItem = {
-  timestamp: number;
-  app: string;
-  windowTitle: string;
-  ocrText: string;
-  frame: ApprovalFrame;
-};
-
-export type LiveSnapshotsApprovalPayload = {
-  kind: "live_snapshots";
-  items: LiveSnapshotItem[];
-};
-
-export type ApprovalPayload =
-  | DayListApprovalPayload
-  | DayIndexApprovalPayload
-  | ChunkContextApprovalPayload
-  | LiveContextApprovalPayload
-  | LiveFrameApprovalPayload
-  | LiveSnapshotsApprovalPayload;
-
-export type ApprovalRequest = {
-  id: string;
-  createdAt: string;
-  query: string;
-  title: string;
-  kind: ApprovalKind;
-  resultPreview: string;
-  fullResult: string;
-  payload: ApprovalPayload;
-};
+export type {
+  ApprovalStatus,
+  ApprovalResolution,
+  ApprovalKind,
+  DayListApprovalDay,
+  DayListApprovalPayload,
+  DayIndexApprovalPayload,
+  ApprovalFrame,
+  ChunkContextApprovalPayload,
+  LiveContextApprovalPayload,
+  LiveFrameApprovalPayload,
+  LiveSnapshotItem,
+  LiveSnapshotsApprovalPayload,
+  ApprovalPayload,
+  ApprovalRequest,
+  ApprovalSettings,
+} from "@context-manager/config";
 
 type PendingApproval = {
   request: ApprovalRequest;
@@ -97,11 +44,6 @@ type ElectronIpcSender = (channel: string, payload: unknown) => void;
 const pendingRequests = new Map<string, PendingApproval>();
 const listeners = new Set<ApprovalListener>();
 let electronIpcSender: ElectronIpcSender | null = null;
-
-export type ApprovalSettings = {
-  autoApproveAllRequests: boolean;
-  timeoutMs: number;
-};
 
 type ApprovalRequestInput = {
   query: string;

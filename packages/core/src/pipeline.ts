@@ -8,11 +8,13 @@ import {
   PIPELINE_CONCURRENCY,
   RETRY_DELAY_MS,
 } from "@context-manager/config";
+import type { AISettings, ProcessBacklogProgress, ProcessBacklogOptions } from "@context-manager/config";
 import { extractFrames, selectRepresentativeFrames } from "./frames";
 import { readChunkDurationMsForFile } from "./recorder";
 import { deleteRawVideo, moveRawVideoToFailed, storeChunk } from "./storage";
 import { tagChunk } from "./tagger";
-import type { AISettings } from "./aiSettings";
+
+export type { ProcessBacklogProgress, ProcessBacklogOptions } from "@context-manager/config";
 
 const TMP_DIR = path.join(CONTEXT_ROOT, ".tmp");
 
@@ -21,18 +23,6 @@ type BacklogItem = {
   mtimeMs: number;
   chunkStart: Date;
   chunkDurationMs: number;
-};
-
-export type ProcessBacklogProgress =
-  | { phase: "start"; total: number; completed: number }
-  | { phase: "chunk-start"; total: number; completed: number; filePath: string }
-  | { phase: "chunk-complete"; total: number; completed: number; filePath: string }
-  | { phase: "paused"; total: number; completed: number }
-  | { phase: "done"; total: number; completed: number };
-
-export type ProcessBacklogOptions = {
-  onProgress?: (progress: ProcessBacklogProgress) => void;
-  aiSettings?: AISettings;
 };
 
 function pad2(n: number): string {

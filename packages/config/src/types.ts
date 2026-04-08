@@ -1,0 +1,235 @@
+// ── AI Settings ──────────────────────────────────────────────────────────────
+
+export type AIProvider = "fireworks" | "local";
+
+export type AISettings = {
+  provider: AIProvider;
+  localBaseUrl: string;
+  localTaggingModel: string;
+  /** Used when `FIREWORKS_API_KEY` is not set in the environment. */
+  fireworksApiKey?: string;
+};
+
+// ── Chunk Settings ───────────────────────────────────────────────────────────
+
+export type ChunkSettings = {
+  chunkDurationMinutes: number;
+};
+
+// ── Exclusions ───────────────────────────────────────────────────────────────
+
+export type ExclusionEntry = {
+  bundle_id: string;
+  name: string;
+  is_default: boolean;
+  enabled: boolean;
+};
+
+export type ExclusionsConfig = {
+  requires_restart: boolean;
+  bundle_ids: ExclusionEntry[];
+};
+
+// ── Hot Buffer ───────────────────────────────────────────────────────────────
+
+export interface HotBufferConfig {
+  captureIntervalMs: number;
+  maxAgeMs: number;
+  purgeIntervalMs: number;
+  resolution: { width: number; height: number };
+  jpegQuality: number;
+  hotbufferDir: string;
+  /** macOS: path to Vision OCR CLI (JPEG path as argv[1], UTF-8 text on stdout). */
+  ocrBinaryPath?: string;
+  excludedBundleIds?: string[];
+}
+
+export interface HotBufferEntry {
+  timestamp: number;
+  timestampISO: string;
+  app: string;
+  windowTitle: string;
+  ocrText: string;
+}
+
+export interface HotBufferSnapshot extends HotBufferEntry {
+  frameBuffer: Buffer;
+}
+
+// ── Pipeline ─────────────────────────────────────────────────────────────────
+
+export type ProcessBacklogProgress =
+  | { phase: "start"; total: number; completed: number }
+  | { phase: "chunk-start"; total: number; completed: number; filePath: string }
+  | { phase: "chunk-complete"; total: number; completed: number; filePath: string }
+  | { phase: "paused"; total: number; completed: number }
+  | { phase: "done"; total: number; completed: number };
+
+export type ProcessBacklogOptions = {
+  onProgress?: (progress: ProcessBacklogProgress) => void;
+  aiSettings?: AISettings;
+};
+
+// ── Searcher ─────────────────────────────────────────────────────────────────
+
+export type DaySummary = {
+  date: string;
+  chunkCount: number;
+  firstChunkTime: string | null;
+  lastChunkTime: string | null;
+  hasIndex: boolean;
+};
+
+export type DayIndex = DaySummary & {
+  chunkKeys: string[];
+  indexText: string;
+};
+
+export type ChunkFrame = {
+  name: string;
+  path: string;
+  mimeType: string;
+  data: string;
+};
+
+export type ChunkContext = {
+  chunkKey: string;
+  date: string;
+  time: string;
+  summaryText: string;
+  meta: Record<string, unknown> | null;
+  frames: ChunkFrame[];
+};
+
+// ── Approvals ────────────────────────────────────────────────────────────────
+
+export type ApprovalStatus = "approved" | "rejected" | "timeout";
+export type ApprovalResolution = "approved" | "rejected";
+export type ApprovalKind = "day_list" | "day_index" | "chunk_context" | "live_context" | "live_frame" | "live_snapshots";
+
+export type DayListApprovalDay = {
+  date: string;
+  chunkCount: number;
+  firstChunkTime: string | null;
+  lastChunkTime: string | null;
+  hasIndex: boolean;
+};
+
+export type DayListApprovalPayload = {
+  kind: "day_list";
+  days: DayListApprovalDay[];
+};
+
+export type DayIndexApprovalPayload = {
+  kind: "day_index";
+  date: string;
+  chunkCount: number;
+  chunkKeys: string[];
+  indexText: string;
+};
+
+export type ApprovalFrame = {
+  name: string;
+  mimeType: string;
+  data: string;
+};
+
+export type ChunkContextApprovalPayload = {
+  kind: "chunk_context";
+  chunkKey: string;
+  date: string;
+  time: string;
+  summaryText: string;
+  metaText: string;
+  frames: ApprovalFrame[];
+};
+
+export type LiveContextApprovalPayload = {
+  kind: "live_context";
+  timelineText: string;
+};
+
+export type LiveFrameApprovalPayload = {
+  kind: "live_frame";
+  timestamp: number;
+  mimeType: string;
+  data: string;
+};
+
+export type LiveSnapshotItem = {
+  timestamp: number;
+  app: string;
+  windowTitle: string;
+  ocrText: string;
+  frame: ApprovalFrame;
+};
+
+export type LiveSnapshotsApprovalPayload = {
+  kind: "live_snapshots";
+  items: LiveSnapshotItem[];
+};
+
+export type ApprovalPayload =
+  | DayListApprovalPayload
+  | DayIndexApprovalPayload
+  | ChunkContextApprovalPayload
+  | LiveContextApprovalPayload
+  | LiveFrameApprovalPayload
+  | LiveSnapshotsApprovalPayload;
+
+export type ApprovalRequest = {
+  id: string;
+  createdAt: string;
+  query: string;
+  title: string;
+  kind: ApprovalKind;
+  resultPreview: string;
+  fullResult: string;
+  payload: ApprovalPayload;
+};
+
+export type ApprovalSettings = {
+  autoApproveAllRequests: boolean;
+  timeoutMs: number;
+};
+
+export type ApprovalState = {
+  pending: ApprovalRequest[];
+  settings: ApprovalSettings;
+};
+
+// ── Desktop IPC ──────────────────────────────────────────────────────────────
+
+export type ProcessingTrigger = "idle" | "manual" | "live" | null;
+
+export type ProcessingStatus = {
+  isProcessing: boolean;
+  currentChunk: number;
+  totalChunks: number;
+  pendingChunks: number;
+  visiblePendingChunks: number;
+  activeRecordingChunk: boolean;
+  trigger: ProcessingTrigger;
+};
+
+export type RemoteAccessStatus = "disabled" | "starting" | "connected" | "reconnecting" | "error";
+
+export type RemoteAccessState = {
+  enabled: boolean;
+  status: RemoteAccessStatus;
+  publicUrl: string | null;
+  authToken: string | null;
+  error: string | null;
+};
+
+export type InstalledApp = {
+  bundleId: string;
+  name: string;
+  iconPath: string | null;
+};
+
+export type SckitExclusionsInitState = {
+  initialized: boolean;
+  bundleIds: string[];
+  error: string | null;
+};

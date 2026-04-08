@@ -10,59 +10,17 @@ import type {
   LiveContextApprovalPayload,
   LiveFrameApprovalPayload,
   LiveSnapshotsApprovalPayload,
-} from "../src/approvalTypes";
+  ProcessingStatus,
+  RemoteAccessState,
+  AISettings,
+  ExclusionEntry,
+  ExclusionsConfig,
+  InstalledApp,
+  SckitExclusionsInitState,
+} from "@context-manager/config";
 
 const contextManager = window.contextManager;
 const INDEX_SECTION_PATTERN = /\[(\d{2}):(\d{2})\]\n([\s\S]*?)(?=\n\n\[\d{2}:\d{2}\]\n|$)/g;
-
-type ProcessingStatus = {
-  isProcessing: boolean;
-  currentChunk: number;
-  totalChunks: number;
-  pendingChunks: number;
-  visiblePendingChunks: number;
-  activeRecordingChunk: boolean;
-  trigger: "idle" | "manual" | "live" | null;
-};
-
-type RemoteAccessState = {
-  enabled: boolean;
-  status: "disabled" | "starting" | "connected" | "reconnecting" | "error";
-  publicUrl: string | null;
-  authToken: string | null;
-  error: string | null;
-};
-
-type AISettings = {
-  provider: "fireworks" | "local";
-  localBaseUrl: string;
-  localTaggingModel: string;
-  fireworksApiKey?: string;
-};
-
-type ExclusionEntry = {
-  bundle_id: string;
-  name: string;
-  is_default: boolean;
-  enabled: boolean;
-};
-
-type ExclusionsConfig = {
-  requires_restart: boolean;
-  bundle_ids: ExclusionEntry[];
-};
-
-type InstalledApp = {
-  bundleId: string;
-  name: string;
-  iconPath: string | null;
-};
-
-type SckitExclusionsInitState = {
-  initialized: boolean;
-  bundleIds: string[];
-  error: string | null;
-};
 
 type TabId = "controls" | "requests" | "settings";
 

@@ -5,32 +5,11 @@ import { promisify } from "util";
 import screenshot from "screenshot-desktop";
 import sharp from "sharp";
 import { CONTEXT_ROOT, HOT_BUFFER_CONFIG, hotBufferDir as hotBufferDirFromRoot } from "@context-manager/config";
+import type { HotBufferConfig, HotBufferEntry, HotBufferSnapshot } from "@context-manager/config";
+
+export type { HotBufferConfig, HotBufferEntry, HotBufferSnapshot } from "@context-manager/config";
 
 const execFileAsync = promisify(execFile);
-
-export interface HotBufferConfig {
-  captureIntervalMs: number;
-  maxAgeMs: number;
-  purgeIntervalMs: number;
-  resolution: { width: number; height: number };
-  jpegQuality: number;
-  hotbufferDir: string;
-  /** macOS: path to Vision OCR CLI (JPEG path as argv[1], UTF-8 text on stdout). */
-  ocrBinaryPath?: string;
-  excludedBundleIds?: string[];
-}
-
-export interface HotBufferEntry {
-  timestamp: number;
-  timestampISO: string;
-  app: string;
-  windowTitle: string;
-  ocrText: string;
-}
-
-export interface HotBufferSnapshot extends HotBufferEntry {
-  frameBuffer: Buffer;
-}
 
 let captureTimer: ReturnType<typeof setInterval> | null = null;
 let purgeTimer: ReturnType<typeof setInterval> | null = null;

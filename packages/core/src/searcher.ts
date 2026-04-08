@@ -1,7 +1,10 @@
 import * as fs from "fs/promises";
 import * as path from "path";
 import { CONTEXT_ROOT } from "@context-manager/config";
+import type { DaySummary, DayIndex, ChunkFrame, ChunkContext } from "@context-manager/config";
 import { SUMMARY_FILE_NAME } from "./storage";
+
+export type { DaySummary, DayIndex, ChunkFrame, ChunkContext } from "@context-manager/config";
 
 const DEFAULT_LIST_DAYS_LIMIT = 30;
 const META_FILE_NAME = "meta.json";
@@ -13,35 +16,6 @@ const CHUNK_KEY_RE = /^(\d{4})-(\d{2})-(\d{2})\/(\d{2})-(\d{2})$/;
 /** Exported for the legacy `index.txt` → `summary.txt` backfill script. */
 export const INDEX_SECTION_PATTERN =
   /\[(\d{2}):(\d{2})\]\n([\s\S]*?)(?=\n\n\[\d{2}:\d{2}\]\n|$)/g;
-
-export type DaySummary = {
-  date: string;
-  chunkCount: number;
-  firstChunkTime: string | null;
-  lastChunkTime: string | null;
-  hasIndex: boolean;
-};
-
-export type DayIndex = DaySummary & {
-  chunkKeys: string[];
-  indexText: string;
-};
-
-export type ChunkFrame = {
-  name: string;
-  path: string;
-  mimeType: string;
-  data: string;
-};
-
-export type ChunkContext = {
-  chunkKey: string;
-  date: string;
-  time: string;
-  summaryText: string;
-  meta: Record<string, unknown> | null;
-  frames: ChunkFrame[];
-};
 
 type ParsedDate = {
   year: string;

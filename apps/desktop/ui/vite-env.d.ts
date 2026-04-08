@@ -1,6 +1,17 @@
 /// <reference types="vite/client" />
 
-import type { ApprovalPayload, ApprovalState } from "../src/approvalTypes";
+import type {
+  ApprovalPayload,
+  ApprovalState,
+  AISettings,
+  ChunkSettings,
+  ExclusionEntry,
+  ExclusionsConfig,
+  InstalledApp,
+  ProcessingStatus,
+  RemoteAccessState,
+  SckitExclusionsInitState,
+} from "@context-manager/config";
 
 interface ContextManagerAPI {
   startRecording: () => Promise<{ success: boolean; filePath: string }>;
@@ -10,71 +21,17 @@ interface ContextManagerAPI {
   sendRecordingChunk: (chunk: ArrayBuffer) => Promise<void>;
   getCurrentFile: () => Promise<string | null>;
   getUnprocessedFiles: () => Promise<string[]>;
-  getProcessingStatus: () => Promise<{
-    isProcessing: boolean;
-    currentChunk: number;
-    totalChunks: number;
-    pendingChunks: number;
-    visiblePendingChunks: number;
-    activeRecordingChunk: boolean;
-    trigger: "idle" | "manual" | "live" | null;
-  }>;
-  onProcessingStatus: (callback: (status: {
-    isProcessing: boolean;
-    currentChunk: number;
-    totalChunks: number;
-    pendingChunks: number;
-    visiblePendingChunks: number;
-    activeRecordingChunk: boolean;
-    trigger: "idle" | "manual" | "live" | null;
-  }) => void) => () => void;
+  getProcessingStatus: () => Promise<ProcessingStatus>;
+  onProcessingStatus: (callback: (status: ProcessingStatus) => void) => () => void;
   getChunkDurationMs: () => Promise<number>;
-  getChunkSettings: () => Promise<{
-    chunkDurationMinutes: number;
-  }>;
-  updateChunkSettings: (settings: {
-    chunkDurationMinutes?: number;
-  }) => Promise<{
-    chunkDurationMinutes: number;
-  }>;
-  getExclusions: () => Promise<{
-    requires_restart: boolean;
-    bundle_ids: Array<{
-      bundle_id: string;
-      name: string;
-      is_default: boolean;
-      enabled: boolean;
-    }>;
-  }>;
-  updateExclusions: (settings: {
-    requires_restart?: boolean;
-    bundle_ids?: Array<{
-      bundle_id: string;
-      name: string;
-      is_default: boolean;
-      enabled: boolean;
-    }>;
-  }) => Promise<{
-    requires_restart: boolean;
-    bundle_ids: Array<{
-      bundle_id: string;
-      name: string;
-      is_default: boolean;
-      enabled: boolean;
-    }>;
-  }>;
-  scanInstalledApps: (opts?: { forceRefresh?: boolean }) => Promise<
-    Array<{ bundleId: string; name: string; iconPath: string | null }>
-  >;
-  scanInstalledAppFromPath: (appPath: string) => Promise<
-    { bundleId: string; name: string; iconPath: string | null } | null
-  >;
+  getChunkSettings: () => Promise<ChunkSettings>;
+  updateChunkSettings: (settings: Partial<ChunkSettings>) => Promise<ChunkSettings>;
+  getExclusions: () => Promise<ExclusionsConfig>;
+  updateExclusions: (settings: Partial<ExclusionsConfig>) => Promise<ExclusionsConfig>;
+  scanInstalledApps: (opts?: { forceRefresh?: boolean }) => Promise<InstalledApp[]>;
+  scanInstalledAppFromPath: (appPath: string) => Promise<InstalledApp | null>;
   getInitializedExclusionBundleIds: () => Promise<string[]>;
-  getSckitExclusionsInitState: () => Promise<{
-    initialized: boolean;
-    bundleIds: string[];
-    error: string | null;
-  }>;
+  getSckitExclusionsInitState: () => Promise<SckitExclusionsInitState>;
   restartApp: () => Promise<void>;
   getDesktopSources: (opts: { types: ("screen" | "window")[] }) => Promise<
     Array<{ id: string; name: string }>
@@ -86,51 +43,12 @@ interface ContextManagerAPI {
     approvedPayload?: ApprovalPayload
   ) => Promise<{ ok: boolean }>;
   approveAllRequests: () => Promise<{ ok: boolean; resolvedCount: number }>;
-  updateApprovalSettings: (settings: {
-    autoApproveAllRequests?: boolean;
-    timeoutMs?: number;
-  }) => Promise<{
-    autoApproveAllRequests: boolean;
-    timeoutMs: number;
-  }>;
-  getAISettings: () => Promise<{
-    provider: "fireworks" | "local";
-    localBaseUrl: string;
-    localTaggingModel: string;
-    fireworksApiKey?: string;
-  }>;
-  updateAISettings: (settings: {
-    provider?: "fireworks" | "local";
-    localBaseUrl?: string;
-    localTaggingModel?: string;
-    fireworksApiKey?: string;
-  }) => Promise<{
-    provider: "fireworks" | "local";
-    localBaseUrl: string;
-    localTaggingModel: string;
-    fireworksApiKey?: string;
-  }>;
-  getRemoteAccessState: () => Promise<{
-    enabled: boolean;
-    status: "disabled" | "starting" | "connected" | "reconnecting" | "error";
-    publicUrl: string | null;
-    authToken: string | null;
-    error: string | null;
-  }>;
-  setRemoteAccessEnabled: (enabled: boolean) => Promise<{
-    enabled: boolean;
-    status: "disabled" | "starting" | "connected" | "reconnecting" | "error";
-    publicUrl: string | null;
-    authToken: string | null;
-    error: string | null;
-  }>;
-  onRemoteAccessState: (callback: (state: {
-    enabled: boolean;
-    status: "disabled" | "starting" | "connected" | "reconnecting" | "error";
-    publicUrl: string | null;
-    authToken: string | null;
-    error: string | null;
-  }) => void) => () => void;
+  updateApprovalSettings: (settings: Partial<import("@context-manager/config").ApprovalSettings>) => Promise<import("@context-manager/config").ApprovalSettings>;
+  getAISettings: () => Promise<AISettings>;
+  updateAISettings: (settings: Partial<AISettings>) => Promise<AISettings>;
+  getRemoteAccessState: () => Promise<RemoteAccessState>;
+  setRemoteAccessEnabled: (enabled: boolean) => Promise<RemoteAccessState>;
+  onRemoteAccessState: (callback: (state: RemoteAccessState) => void) => () => void;
   onApprovalState: (callback: (state: ApprovalState) => void) => () => void;
 }
 

@@ -1,14 +1,13 @@
 import * as fs from "fs";
 import * as path from "path";
-import { CHUNK_DURATION_MS, CONTEXT_ROOT } from "@context-manager/config";
+import { CHUNK_DURATION_MS, BASIS_ROOT } from "@context-manager/config";
+import type { ChunkSettings } from "@context-manager/config";
+
+export type { ChunkSettings } from "@context-manager/config";
 
 const CHUNK_SETTINGS_FILE_NAME = "chunk-settings.json";
 const MIN_CHUNK_DURATION_MINUTES = 1;
 const DEFAULT_CHUNK_DURATION_MINUTES = Math.round(CHUNK_DURATION_MS / 60_000);
-
-export type ChunkSettings = {
-  chunkDurationMinutes: number;
-};
 
 function normalizeChunkDurationMinutes(value: unknown): number {
   if (typeof value !== "number" || !Number.isFinite(value)) {
@@ -25,7 +24,7 @@ function normalizeChunkSettings(value: unknown): ChunkSettings {
 }
 
 export function getChunkSettingsPath(): string {
-  return path.join(CONTEXT_ROOT, CHUNK_SETTINGS_FILE_NAME);
+  return path.join(BASIS_ROOT, CHUNK_SETTINGS_FILE_NAME);
 }
 
 export function readChunkSettings(): ChunkSettings {

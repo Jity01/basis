@@ -1,16 +1,9 @@
 import * as fs from "fs";
 import * as path from "path";
-import { CONTEXT_ROOT } from "@context-manager/config";
+import { BASIS_ROOT } from "@context-manager/config";
+import type { AIProvider, AISettings } from "@context-manager/config";
 
-export type AIProvider = "fireworks" | "local";
-
-export type AISettings = {
-  provider: AIProvider;
-  localBaseUrl: string;
-  localTaggingModel: string;
-  /** Used when `FIREWORKS_API_KEY` is not set in the environment. */
-  fireworksApiKey?: string;
-};
+export type { AIProvider, AISettings } from "@context-manager/config";
 
 const AI_SETTINGS_FILE_NAME = "ai-settings.json";
 const DEFAULT_LOCAL_BASE_URL = "http://127.0.0.1:11434/v1";
@@ -22,7 +15,7 @@ export const DEFAULT_AI_SETTINGS: AISettings = {
 };
 
 export function getAISettingsPath(): string {
-  return path.join(CONTEXT_ROOT, AI_SETTINGS_FILE_NAME);
+  return path.join(BASIS_ROOT, AI_SETTINGS_FILE_NAME);
 }
 
 function normalizeProvider(value: unknown): AIProvider {

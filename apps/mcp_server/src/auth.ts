@@ -3,7 +3,7 @@ import * as fs from "fs";
 import { randomBytes, timingSafeEqual } from "crypto";
 import type { IncomingMessage } from "http";
 import type { Response } from "express";
-import { CONTEXT_ROOT } from "@context-manager/config";
+import { BASIS_ROOT } from "@context-manager/config";
 import type { OAuthRegisteredClientsStore } from "@modelcontextprotocol/sdk/server/auth/clients.js";
 import {
   InvalidGrantError,
@@ -48,8 +48,8 @@ type RefreshTokenRecord = {
   expiresAt: number;
 };
 
-const LOCAL_DEBUG_AUTH_PATH = path.join(CONTEXT_ROOT, "mcp-auth.json");
-const OAUTH_CLIENTS_PATH = path.join(CONTEXT_ROOT, "mcp-oauth-clients.json");
+const LOCAL_DEBUG_AUTH_PATH = path.join(BASIS_ROOT, "mcp-auth.json");
+const OAUTH_CLIENTS_PATH = path.join(BASIS_ROOT, "mcp-oauth-clients.json");
 const AUTHORIZATION_CODE_TTL_MS = 5 * 60_000;
 const ACCESS_TOKEN_TTL_S = 24 * 60 * 60;
 const REFRESH_TOKEN_TTL_S = 30 * 24 * 60 * 60;

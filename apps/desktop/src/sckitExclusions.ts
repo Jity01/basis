@@ -1,7 +1,8 @@
 import { app } from "electron";
 import * as path from "path";
 import { spawnSync } from "child_process";
-import { enabledExclusionBundleIds, loadExclusions, type ExclusionsConfig } from "@context-manager/core";
+import type { ExclusionsConfig } from "@context-manager/config";
+import { enabledExclusionBundleIds, loadExclusions } from "@context-manager/core";
 
 type SckitInitResult = {
   ok: boolean;

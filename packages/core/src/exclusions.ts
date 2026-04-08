@@ -1,25 +1,15 @@
 import * as fs from "fs";
-import * as os from "os";
 import * as path from "path";
+import { BASIS_ROOT } from "@context-manager/config";
+import type { ExclusionEntry, ExclusionsConfig } from "@context-manager/config";
 
-export type ExclusionEntry = {
-  bundle_id: string;
-  name: string;
-  is_default: boolean;
-  enabled: boolean;
-};
-
-export type ExclusionsConfig = {
-  requires_restart: boolean;
-  bundle_ids: ExclusionEntry[];
-};
+export type { ExclusionEntry, ExclusionsConfig } from "@context-manager/config";
 
 type ExclusionSeed = {
   bundle_id: string;
   name: string;
 };
 
-const BASIS_DIR_NAME = ".basis";
 const EXCLUSIONS_FILE_NAME = "exclusions.json";
 
 const DEFAULT_EXCLUSIONS: ExclusionSeed[] = [
@@ -136,7 +126,7 @@ export function mergeWithDefaults(config: ExclusionsConfig): ExclusionsConfig {
 }
 
 export function getExclusionsPath(): string {
-  return path.join(os.homedir(), BASIS_DIR_NAME, EXCLUSIONS_FILE_NAME);
+  return path.join(BASIS_ROOT, EXCLUSIONS_FILE_NAME);
 }
 
 function writeConfig(config: ExclusionsConfig): ExclusionsConfig {

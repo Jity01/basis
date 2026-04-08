@@ -2,12 +2,10 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import { execFileSync } from "child_process";
+import { BASIS_ROOT } from "@context-manager/config";
+import type { InstalledApp } from "@context-manager/config";
 
-export type InstalledApp = {
-  bundleId: string;
-  name: string;
-  iconPath: string | null;
-};
+export type { InstalledApp } from "@context-manager/config";
 
 let cachedApps: InstalledApp[] | null = null;
 
@@ -35,7 +33,7 @@ function resolveIconPng(appPath: string): string | null {
     return null;
   }
 
-  const cacheDir = path.join(os.homedir(), ".basis", "cache", "app-icons");
+  const cacheDir = path.join(BASIS_ROOT, "cache", "app-icons");
   fs.mkdirSync(cacheDir, { recursive: true });
   const outPath = path.join(cacheDir, `${path.basename(appPath, ".app")}.png`);
   try {

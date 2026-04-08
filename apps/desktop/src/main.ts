@@ -1,7 +1,7 @@
 import "./bundledBinPaths";
 import { app, BrowserWindow } from "electron";
 import * as path from "path";
-import { setupIpc, setMainWindow } from "./ipc";
+import { setupIpc, setMainWindow } from "./ipcHandlers";
 import { startBundledMcpServer, stopBundledMcpServer } from "./mcpServer";
 import { clearExclusionsRequiresRestart, loadExclusions } from "@context-manager/core";
 import { initializeSckitExclusions } from "./sckitExclusions";
