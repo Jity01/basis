@@ -1,0 +1,6 @@
+{
+  "name": "justreheat-landing",
+  "scripts": {
+    "start": "npx serve ."
+  }
+}
