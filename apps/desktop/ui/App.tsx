@@ -1,33 +1,19 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import type {
-  ApprovalFrame,
-  ApprovalPayload,
-  ApprovalRequest,
-  ApprovalSettings,
-  ChunkContextApprovalPayload,
-  DayIndexApprovalPayload,
-  DayListApprovalPayload,
-  LiveContextApprovalPayload,
-  LiveFrameApprovalPayload,
-  LiveSnapshotsApprovalPayload,
   ProcessingStatus,
-  RemoteAccessState,
   AISettings,
+  ContextScope,
   ExclusionEntry,
   ExclusionsConfig,
   InstalledApp,
+  ScopeGrant,
   SckitExclusionsInitState,
 } from "@context-manager/config";
 
 const contextManager = window.contextManager;
 const INDEX_SECTION_PATTERN = /\[(\d{2}):(\d{2})\]\n([\s\S]*?)(?=\n\n\[\d{2}:\d{2}\]\n|$)/g;
 
-type TabId = "controls" | "requests" | "settings";
-
-const fallbackSettings: ApprovalSettings = {
-  autoApproveAllRequests: false,
-  timeoutMs: 120_000,
-};
+type TabId = "controls" | "settings";
 
 const fallbackAISettings: AISettings = {
   provider: "fireworks",
@@ -115,27 +101,6 @@ function serializeIndexSections(sections: Array<{ time: string; summaryText: str
     .trimEnd();
 }
 
-function frameDataUrl(frame: ApprovalFrame): string {
-  return `data:${frame.mimeType};base64,${frame.data}`;
-}
-
-function approvalKindLabel(payload: ApprovalPayload): string {
-  switch (payload.kind) {
-    case "day_list":
-      return "Day list";
-    case "day_index":
-      return "Day index";
-    case "chunk_context":
-      return "Chunk context";
-    case "live_context":
-      return "Live context";
-    case "live_frame":
-      return "Live frame";
-    case "live_snapshots":
-      return "Live snapshots";
-  }
-}
-
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabId>("controls");
   const [isRecording, setIsRecording] = useState(false);
@@ -150,18 +115,10 @@ export default function App() {
     activeRecordingChunk: false,
     trigger: null,
   });
-  const [remoteAccessState, setRemoteAccessState] = useState<RemoteAccessState>({
-    enabled: false,
-    status: "disabled",
-    publicUrl: null,
-    authToken: null,
-    error: null,
-  });
-  const [isTogglingRemoteAccess, setIsTogglingRemoteAccess] = useState(false);
-  const [pendingApprovals, setPendingApprovals] = useState<ApprovalRequest[]>([]);
-  const [approvalSettings, setApprovalSettings] = useState<ApprovalSettings>(fallbackSettings);
+  const [localGrant, setLocalGrant] = useState<ScopeGrant | null>(null);
+  const [mcpServerPath, setMcpServerPath] = useState<string>("");
+  const [runInBackground, setRunInBackgroundState] = useState<boolean>(false);
   const [aiSettings, setAISettings] = useState<AISettings>(fallbackAISettings);
-  const [settingsTimeoutSeconds, setSettingsTimeoutSeconds] = useState(120);
   const [chunkDurationMinutes, setChunkDurationMinutes] = useState(5);
   const [exclusions, setExclusions] = useState<ExclusionsConfig>(initialExclusionsConfig);
   const [installedApps, setInstalledApps] = useState<InstalledApp[]>([]);
@@ -171,8 +128,6 @@ export default function App() {
   const [sckitExclusionsState, setSckitExclusionsState] = useState<SckitExclusionsInitState>(
     initialSckitExclusionsState
   );
-  const [approvalDrafts, setApprovalDrafts] = useState<Record<string, ApprovalPayload>>({});
-  const [approvalNotice, setApprovalNotice] = useState<string | null>(null);
   const [frameLightbox, setFrameLightbox] = useState<{ src: string; title: string } | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -182,7 +137,6 @@ export default function App() {
   const isRotatingRef = useRef(false);
   const stoppingRef = useRef(false);
   const pendingChunkSendsRef = useRef(new Set<Promise<void>>());
-  const previousPendingCountRef = useRef(0);
 
   async function createScreenStream(): Promise<MediaStream> {
     const sources = await contextManager.getDesktopSources({ types: ["screen"] });
@@ -352,15 +306,6 @@ export default function App() {
     setProcessingStatus(status);
   }, []);
 
-  const refreshApprovalState = useCallback(async () => {
-    if (!contextManager) {
-      return;
-    }
-    const state = await contextManager.getApprovalState();
-    setPendingApprovals(state.pending);
-    setApprovalSettings(state.settings || fallbackSettings);
-  }, []);
-
   const processNow = useCallback(async () => {
     try {
       setError(null);
@@ -373,16 +318,34 @@ export default function App() {
     }
   }, [refreshProcessingStatus]);
 
-  const setRemoteAccessEnabled = useCallback(async (enabled: boolean) => {
+  const toggleScope = useCallback(async (scope: ContextScope) => {
     try {
       setError(null);
-      setIsTogglingRemoteAccess(true);
-      const nextState = await contextManager.setRemoteAccessEnabled(enabled);
-      setRemoteAccessState(nextState);
+      const current = localGrant?.scopes || [];
+      const next = current.includes(scope) ? current.filter((s) => s !== scope) : [...current, scope];
+      const updated = await contextManager.setLocalScopes(next);
+      setLocalGrant(updated);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed updating remote access");
-    } finally {
-      setIsTogglingRemoteAccess(false);
+      setError(err instanceof Error ? err.message : "Failed updating scopes");
+    }
+  }, [localGrant]);
+
+  const revokeAllScopes = useCallback(async () => {
+    try {
+      setError(null);
+      await contextManager.revokeLocalGrant();
+      setLocalGrant(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed revoking grant");
+    }
+  }, []);
+
+  const toggleBackground = useCallback(async (enabled: boolean) => {
+    try {
+      const next = await contextManager.setRunInBackground(enabled);
+      setRunInBackgroundState(next);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed updating background mode");
     }
   }, []);
 
@@ -397,65 +360,12 @@ export default function App() {
     }
   }, []);
 
-  const updateApprovalDraft = useCallback((requestId: string, nextPayload: ApprovalPayload) => {
-    setApprovalDrafts((current) => ({ ...current, [requestId]: nextPayload }));
-  }, []);
-
-  const resolveRequest = useCallback(
-    async (request: ApprovalRequest, resolution: "approved" | "rejected") => {
-      try {
-        setError(null);
-        await contextManager.resolveApproval(
-          request.id,
-          resolution,
-          resolution === "approved" ? approvalDrafts[request.id] || request.payload : undefined
-        );
-        setPendingApprovals((current) => current.filter((pending) => pending.id !== request.id));
-        setApprovalDrafts((current) => {
-          const next = { ...current };
-          delete next[request.id];
-          return next;
-        });
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to resolve request");
-      }
-    },
-    [approvalDrafts]
-  );
-
-  const approveAll = useCallback(async () => {
-    try {
-      setError(null);
-      await contextManager.approveAllRequests();
-      setPendingApprovals([]);
-      setApprovalNotice("Approved all pending requests.");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to approve all requests");
-    }
-  }, []);
-
-  const saveSettings = useCallback(async () => {
-    try {
-      setError(null);
-      const timeoutMs = Math.max(5, settingsTimeoutSeconds) * 1000;
-      const updated = await contextManager.updateApprovalSettings({
-        autoApproveAllRequests: approvalSettings.autoApproveAllRequests,
-        timeoutMs,
-      });
-      setApprovalSettings(updated);
-      setSettingsTimeoutSeconds(Math.max(5, Math.round(updated.timeoutMs / 1000)));
-      setApprovalNotice("Approval settings saved.");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save approval settings");
-    }
-  }, [approvalSettings.autoApproveAllRequests, settingsTimeoutSeconds]);
-
   const saveAISettings = useCallback(async () => {
     try {
       setError(null);
       const updated = await contextManager.updateAISettings(aiSettings);
       setAISettings(updated);
-      setApprovalNotice("AI settings saved.");
+      setError("AI settings saved.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save AI settings");
     }
@@ -468,7 +378,7 @@ export default function App() {
         chunkDurationMinutes: Math.max(1, Math.round(chunkDurationMinutes)),
       });
       setChunkDurationMinutes(updated.chunkDurationMinutes);
-      setApprovalNotice("Capture settings saved.");
+      setError("Capture settings saved.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save capture settings");
     }
@@ -476,7 +386,7 @@ export default function App() {
 
   const setExclusionsAndNotify = useCallback((next: ExclusionsConfig, notice: string) => {
     setExclusions(next);
-    setApprovalNotice(notice);
+    setError(notice);
   }, []);
 
   const updateExclusionEntries = useCallback(
@@ -525,8 +435,7 @@ export default function App() {
   const saveAllSettings = useCallback(async () => {
     await saveChunkSettings();
     await saveAISettings();
-    await saveSettings();
-  }, [saveChunkSettings, saveAISettings, saveSettings]);
+  }, [saveChunkSettings, saveAISettings]);
 
   const formatDuration = (seconds: number) => {
     const m = Math.floor(seconds / 60);
@@ -575,31 +484,20 @@ export default function App() {
     return "Process Now";
   })();
 
-  const remoteStatusLine = (() => {
-    switch (remoteAccessState.status) {
-      case "connected":
-        return "Connected";
-      case "starting":
-        return "Starting tunnel...";
-      case "reconnecting":
-        return "Reconnecting tunnel...";
-      case "error":
-        return "Tunnel error";
-      default:
-        return "Disabled";
-    }
-  })();
-  const remoteMcpEndpoint = remoteAccessState.publicUrl ? `${remoteAccessState.publicUrl}/mcp` : null;
-
   useEffect(() => {
     if (!contextManager) {
       return;
     }
 
     void refreshProcessingStatus();
-    void refreshApprovalState();
-    void contextManager.getRemoteAccessState().then((state) => {
-      setRemoteAccessState(state);
+    void contextManager.getLocalGrant().then((grant) => {
+      setLocalGrant(grant);
+    });
+    void contextManager.getMcpServerPath().then((p) => {
+      setMcpServerPath(p);
+    });
+    void contextManager.getRunInBackground().then((enabled) => {
+      setRunInBackgroundState(enabled);
     });
     void contextManager.getChunkSettings().then((settings) => {
       setChunkDurationMinutes(settings.chunkDurationMinutes);
@@ -620,42 +518,13 @@ export default function App() {
     const unsubscribeProcessing = contextManager.onProcessingStatus((status) => {
       setProcessingStatus(status);
     });
-    const unsubscribeApprovals = contextManager.onApprovalState((state) => {
-      const previousCount = previousPendingCountRef.current;
-      const nextCount = state.pending.length;
-      previousPendingCountRef.current = nextCount;
-      setPendingApprovals(state.pending);
-      setApprovalSettings(state.settings || fallbackSettings);
-      if (nextCount > previousCount) {
-        setApprovalNotice(`New context request pending (${nextCount} total).`);
-      }
-    });
-    const unsubscribeRemote = contextManager.onRemoteAccessState((state) => {
-      setRemoteAccessState(state);
-    });
 
     return () => {
       unsubscribeProcessing();
-      unsubscribeApprovals();
-      unsubscribeRemote();
       if (rotationTimerRef.current) clearInterval(rotationTimerRef.current);
       if (durationTimerRef.current) clearInterval(durationTimerRef.current);
     };
-  }, [refreshApprovalState, refreshProcessingStatus]);
-
-  useEffect(() => {
-    setSettingsTimeoutSeconds(Math.max(5, Math.round(approvalSettings.timeoutMs / 1000)));
-  }, [approvalSettings.timeoutMs]);
-
-  useEffect(() => {
-    setApprovalDrafts((current) => {
-      const next: Record<string, ApprovalPayload> = {};
-      for (const request of pendingApprovals) {
-        next[request.id] = current[request.id] || request.payload;
-      }
-      return next;
-    });
-  }, [pendingApprovals]);
+  }, [refreshProcessingStatus]);
 
   useEffect(() => {
     if (!frameLightbox) {
@@ -699,7 +568,6 @@ export default function App() {
     };
   }, [addExclusion, pickerOpen]);
 
-  const pendingCount = pendingApprovals.length;
   const exclusionQuery = pickerQuery.trim().toLowerCase();
   const excludedIds = new Set(exclusions.bundle_ids.map((entry) => entry.bundle_id));
   const filteredApps = installedApps.filter((app) => {
@@ -722,388 +590,10 @@ export default function App() {
       : processingStatus.pendingChunks > 0
         ? "tone-pending"
         : "tone-ready";
-  const remoteStatusToneClass =
-    remoteAccessState.status === "connected"
-      ? "tone-ready"
-      : remoteAccessState.status === "error"
-        ? "tone-warning"
-        : remoteAccessState.status === "starting" || remoteAccessState.status === "reconnecting"
-          ? "tone-processing"
-          : "tone-muted";
-
-  const renderDayListApproval = (request: ApprovalRequest, payload: DayListApprovalPayload) => (
-    <div className="approval-stack">
-      <div className="approval-chip-row">
-        <span className="approval-kind-pill">{approvalKindLabel(payload)}</span>
-        <span className="approval-helper-pill">Approve as shown</span>
-      </div>
-      <div className="approval-day-grid">
-        {payload.days.length === 0 ? (
-          <p className="empty-state">No stored context days found.</p>
-        ) : (
-          payload.days.map((day) => (
-            <article key={`${request.id}-${day.date}`} className="approval-day-card">
-              <div className="approval-day-header">
-                <div>
-                  <p className="approval-day-date">{formatFriendlyDate(day.date)}</p>
-                  <p className="approval-day-subtitle">{day.date}</p>
-                </div>
-                <span className="approval-count-pill">
-                  {day.chunkCount} chunk{day.chunkCount === 1 ? "" : "s"}
-                </span>
-              </div>
-              <div className="approval-day-metadata">
-                <span>{day.firstChunkTime ? formatFriendlyTime(day.firstChunkTime) : "No start time"}</span>
-                <span>{day.lastChunkTime ? formatFriendlyTime(day.lastChunkTime) : "No end time"}</span>
-                <span>{day.hasIndex ? "Indexed" : "Missing index"}</span>
-              </div>
-            </article>
-          ))
-        )}
-      </div>
-    </div>
-  );
-
-  const renderDayIndexApproval = (request: ApprovalRequest, payload: DayIndexApprovalPayload) => {
-    const sections = parseIndexSections(payload.indexText);
-    const updateDayIndexSection = (
-      sectionIndex: number,
-      patch: Partial<{ time: string; summaryText: string }>
-    ) => {
-      const next = parseIndexSections(payload.indexText).map((section, i) =>
-        i === sectionIndex ? { ...section, ...patch } : section
-      );
-      updateApprovalDraft(request.id, {
-        ...payload,
-        indexText: serializeIndexSections(next),
-      });
-    };
-
-    return (
-      <div className="approval-stack">
-        <div className="approval-chip-row">
-          <span className="approval-kind-pill">{approvalKindLabel(payload)}</span>
-          <span className="approval-helper-pill">Edits apply only to this approval</span>
-        </div>
-        <div className="approval-date-hero">
-          <div>
-            <p className="approval-date-label">{formatFriendlyDate(payload.date)}</p>
-            <h3 className="approval-date-title">{payload.date}</h3>
-          </div>
-          <div className="approval-chip-row">
-            <span className="approval-count-pill">
-              {payload.chunkCount} chunk{payload.chunkCount === 1 ? "" : "s"}
-            </span>
-            <span className="approval-count-pill">{payload.chunkKeys.length} keys</span>
-          </div>
-        </div>
-        <div className="approval-time-section-list">
-          {sections.length === 0 ? (
-            <>
-              <p className="empty-state">No timestamp sections detected in this index.</p>
-              <div className="approval-editor-block">
-                <label className="field-label" htmlFor={`approval-index-${request.id}`}>
-                  Outgoing index text
-                </label>
-                <textarea
-                  id={`approval-index-${request.id}`}
-                  className="field-input approval-textarea"
-                  value={payload.indexText}
-                  onChange={(event) =>
-                    updateApprovalDraft(request.id, {
-                      ...payload,
-                      indexText: event.target.value,
-                    })
-                  }
-                />
-              </div>
-            </>
-          ) : (
-            sections.map((section, index) => (
-              <article key={`${request.id}-${section.time}-${index}`} className="approval-time-card">
-                <div className="approval-time-edit-row">
-                  <label className="field-label approval-time-field-label" htmlFor={`approval-time-${request.id}-${index}`}>
-                    Time
-                  </label>
-                  <input
-                    id={`approval-time-${request.id}-${index}`}
-                    type="time"
-                    className="field-input approval-time-input"
-                    value={normalizeClockTime(section.time)}
-                    onChange={(event) =>
-                      updateDayIndexSection(index, { time: event.target.value })
-                    }
-                  />
-                </div>
-                <label className="field-label" htmlFor={`approval-summary-${request.id}-${index}`}>
-                  Summary
-                </label>
-                <textarea
-                  id={`approval-summary-${request.id}-${index}`}
-                  className="field-input approval-textarea approval-time-body-textarea"
-                  value={section.summaryText}
-                  onChange={(event) =>
-                    updateDayIndexSection(index, { summaryText: event.target.value })
-                  }
-                />
-              </article>
-            ))
-          )}
-        </div>
-      </div>
-    );
-  };
-
-  const renderChunkContextApproval = (
-    request: ApprovalRequest,
-    payload: ChunkContextApprovalPayload
-  ) => (
-    <div className="approval-stack">
-      <div className="approval-chip-row">
-        <span className="approval-kind-pill">{approvalKindLabel(payload)}</span>
-        <span className="approval-helper-pill">Edits apply only to this approval</span>
-      </div>
-      <div className="approval-date-hero">
-        <div>
-          <p className="approval-date-label">{formatFriendlyDate(payload.date)}</p>
-          <h3 className="approval-date-title">{formatFriendlyTime(payload.time)}</h3>
-          <p className="approval-day-subtitle">{payload.chunkKey}</p>
-        </div>
-        <span className="approval-count-pill">
-          {payload.frames.length} frame{payload.frames.length === 1 ? "" : "s"}
-        </span>
-      </div>
-      <div className="approval-editor-block">
-        <label
-          className="field-label approval-editor-heading"
-          htmlFor={`approval-summary-${request.id}`}
-        >
-          Outgoing summary
-        </label>
-        <textarea
-          id={`approval-summary-${request.id}`}
-          className="field-input approval-textarea approval-textarea-short"
-          value={payload.summaryText}
-          onChange={(event) =>
-            updateApprovalDraft(request.id, {
-              ...payload,
-              summaryText: event.target.value,
-            })
-          }
-        />
-      </div>
-      <div className="approval-editor-block">
-        <label
-          className="field-label approval-editor-heading"
-          htmlFor={`approval-meta-${request.id}`}
-        >
-          Outgoing metadata
-        </label>
-        <textarea
-          id={`approval-meta-${request.id}`}
-          className="field-input approval-textarea"
-          value={payload.metaText}
-          onChange={(event) =>
-            updateApprovalDraft(request.id, {
-              ...payload,
-              metaText: event.target.value,
-            })
-          }
-        />
-      </div>
-      <div className="approval-frame-header">
-        <div>
-          <p className="approval-date-label">Frames</p>
-          <p className="approval-day-subtitle">Remove any frame you do not want to send.</p>
-        </div>
-        <span className="approval-count-pill">
-          {payload.frames.length} selected
-        </span>
-      </div>
-      <div className="approval-frame-grid">
-        {payload.frames.length === 0 ? (
-          <p className="empty-state">No frames selected for this approval.</p>
-        ) : (
-          payload.frames.map((frame) => (
-            <article key={`${request.id}-${frame.name}`} className="approval-frame-card">
-              <button
-                className="approval-frame-remove"
-                onClick={() =>
-                  updateApprovalDraft(request.id, {
-                    ...payload,
-                    frames: payload.frames.filter((candidate) => candidate.name !== frame.name),
-                  })
-                }
-                type="button"
-              >
-                Remove
-              </button>
-              <button
-                type="button"
-                className="approval-frame-image-button"
-                onClick={() =>
-                  setFrameLightbox({ src: frameDataUrl(frame), title: frame.name })
-                }
-                aria-label={`View full size: ${frame.name}`}
-              >
-                <img className="approval-frame-image" src={frameDataUrl(frame)} alt="" />
-              </button>
-              <div className="approval-frame-meta">
-                <span>{frame.name}</span>
-                <span>{frame.mimeType}</span>
-              </div>
-            </article>
-          ))
-        )}
-      </div>
-    </div>
-  );
-
-  const renderLiveContextApproval = (request: ApprovalRequest, payload: LiveContextApprovalPayload) => (
-    <div className="approval-stack">
-      <div className="approval-chip-row">
-        <span className="approval-kind-pill">{approvalKindLabel(payload)}</span>
-        <span className="approval-helper-pill">Edits apply only to this approval</span>
-      </div>
-      <div className="approval-editor-block">
-        <label className="field-label" htmlFor={`approval-live-ctx-${request.id}`}>
-          Outgoing text
-        </label>
-        <textarea
-          id={`approval-live-ctx-${request.id}`}
-          className="field-input approval-textarea"
-          value={payload.timelineText}
-          onChange={(event) =>
-            updateApprovalDraft(request.id, {
-              ...payload,
-              timelineText: event.target.value,
-            })
-          }
-        />
-      </div>
-    </div>
-  );
-
-  const renderLiveFrameApproval = (request: ApprovalRequest, payload: LiveFrameApprovalPayload) => (
-    <div className="approval-stack">
-      <div className="approval-chip-row">
-        <span className="approval-kind-pill">{approvalKindLabel(payload)}</span>
-        <span className="approval-helper-pill">Approve to send this screenshot</span>
-      </div>
-      <div className="approval-date-hero">
-        <p className="approval-day-subtitle">Timestamp {payload.timestamp}</p>
-      </div>
-      <div className="approval-frame-grid">
-        <article className="approval-frame-card">
-          <button
-            type="button"
-            className="approval-frame-image-button"
-            onClick={() =>
-              setFrameLightbox({
-                src: frameDataUrl({ name: "live", mimeType: payload.mimeType, data: payload.data }),
-                title: "Live frame",
-              })
-            }
-            aria-label="View full size"
-          >
-            <img
-              className="approval-frame-image"
-              src={frameDataUrl({ name: "live", mimeType: payload.mimeType, data: payload.data })}
-              alt=""
-            />
-          </button>
-        </article>
-      </div>
-    </div>
-  );
-
-  const renderLiveSnapshotsApproval = (
-    request: ApprovalRequest,
-    payload: LiveSnapshotsApprovalPayload
-  ) => (
-    <div className="approval-stack">
-      <div className="approval-chip-row">
-        <span className="approval-kind-pill">{approvalKindLabel(payload)}</span>
-        <span className="approval-helper-pill">Remove snapshots you do not want to send</span>
-      </div>
-      <div className="approval-frame-header">
-        <span className="approval-count-pill">{payload.items.length} snapshot(s)</span>
-      </div>
-      <div className="approval-frame-grid">
-        {payload.items.length === 0 ? (
-          <p className="empty-state">No snapshots selected.</p>
-        ) : (
-          payload.items.map((item) => (
-            <article key={`${request.id}-${item.timestamp}`} className="approval-frame-card">
-              <button
-                className="approval-frame-remove"
-                onClick={() =>
-                  updateApprovalDraft(request.id, {
-                    ...payload,
-                    items: payload.items.filter((row) => row.timestamp !== item.timestamp),
-                  })
-                }
-                type="button"
-              >
-                Remove
-              </button>
-              <button
-                type="button"
-                className="approval-frame-image-button"
-                onClick={() =>
-                  setFrameLightbox({
-                    src: frameDataUrl(item.frame),
-                    title: `${item.app} @ ${item.timestamp}`,
-                  })
-                }
-                aria-label="View snapshot"
-              >
-                <img className="approval-frame-image" src={frameDataUrl(item.frame)} alt="" />
-              </button>
-              <div className="approval-frame-meta">
-                <span>{item.app}</span>
-                <span>{item.windowTitle}</span>
-              </div>
-              <label className="field-label" htmlFor={`approval-snap-ocr-${request.id}-${item.timestamp}`}>
-                OCR
-              </label>
-              <textarea
-                id={`approval-snap-ocr-${request.id}-${item.timestamp}`}
-                className="field-input approval-textarea approval-time-body-textarea"
-                value={item.ocrText}
-                onChange={(event) =>
-                  updateApprovalDraft(request.id, {
-                    ...payload,
-                    items: payload.items.map((row) =>
-                      row.timestamp === item.timestamp ? { ...row, ocrText: event.target.value } : row
-                    ),
-                  })
-                }
-              />
-            </article>
-          ))
-        )}
-      </div>
-    </div>
-  );
-
-  const renderApprovalCard = (request: ApprovalRequest) => {
-    const payload = approvalDrafts[request.id] || request.payload;
-    switch (payload.kind) {
-      case "day_list":
-        return renderDayListApproval(request, payload);
-      case "day_index":
-        return renderDayIndexApproval(request, payload);
-      case "chunk_context":
-        return renderChunkContextApproval(request, payload);
-      case "live_context":
-        return renderLiveContextApproval(request, payload);
-      case "live_frame":
-        return renderLiveFrameApproval(request, payload);
-      case "live_snapshots":
-        return renderLiveSnapshotsApproval(request, payload);
-    }
-  };
+  const grantedScopes = localGrant?.scopes || [];
+  const claudeConfigSnippet = mcpServerPath
+    ? JSON.stringify({ mcpServers: { basis: { command: "node", args: [mcpServerPath] } } }, null, 2)
+    : "";
 
   return (
     <div className="app-shell">
@@ -1115,13 +605,6 @@ export default function App() {
             type="button"
           >
             Controls
-          </button>
-          <button
-            className={`tab-button ${activeTab === "requests" ? "is-active" : ""}`}
-            onClick={() => setActiveTab("requests")}
-            type="button"
-          >
-            Requests{pendingCount > 0 ? ` (${pendingCount})` : ""}
           </button>
           <button
             className={`tab-button ${activeTab === "settings" ? "is-active" : ""}`}
@@ -1138,8 +621,6 @@ export default function App() {
             OS-level exclusions failed to initialize: {sckitExclusionsState.error}
           </p>
         )}
-        {approvalNotice && <p className="banner banner-info">{approvalNotice}</p>}
-
         {activeTab === "controls" && (
           <section className="panel">
             <div className="section-heading">
@@ -1173,63 +654,6 @@ export default function App() {
           </section>
         )}
 
-        {activeTab === "requests" && (
-          <section className="panel">
-            <div className="section-heading section-heading-row">
-              <div>
-                <p className="section-kicker">Approvals</p>
-                <h2 className="section-title">Pending requests</h2>
-              </div>
-              <div className="button-row">
-                <button className="button button-ghost" onClick={() => void refreshApprovalState()} type="button">
-                  Refresh
-                </button>
-                <button
-                  className="button button-secondary"
-                  onClick={() => void approveAll()}
-                  disabled={pendingCount === 0}
-                  type="button"
-                >
-                  Approve All
-                </button>
-              </div>
-            </div>
-
-            <p className="support-copy">Pending Requests: {pendingCount}</p>
-
-            {pendingCount === 0 && <p className="empty-state">No pending requests.</p>}
-
-            <div className="request-list">
-              {pendingApprovals.map((request) => (
-                <article key={request.id} className="request-card approval-request-card">
-                  <div className="request-header">
-                    <div className="request-meta">
-                      <div className="request-title">{request.title || request.query}</div>
-                      <div className="request-date">{formatCreatedAt(request.createdAt)}</div>
-                    </div>
-                    <div className="button-row">
-                      <button
-                        className="button button-secondary"
-                        onClick={() => void resolveRequest(request, "approved")}
-                        type="button"
-                      >
-                        Approve
-                      </button>
-                      <button
-                        className="button button-ghost"
-                        onClick={() => void resolveRequest(request, "rejected")}
-                        type="button"
-                      >
-                        Reject
-                      </button>
-                    </div>
-                  </div>
-                  {renderApprovalCard(request)}
-                </article>
-              ))}
-            </div>
-          </section>
-        )}
 
         {activeTab === "settings" && (
           <section className="panel panel-form">
@@ -1460,80 +884,95 @@ export default function App() {
               )}
 
               <div className="section-heading">
-                <h2 className="section-title">Remote access</h2>
+                <h2 className="section-title">MCP Access (Local stdio)</h2>
               </div>
+
+              <p className="support-copy">
+                Basis runs as a local stdio MCP server. Configure Claude Desktop (or any MCP client)
+                to launch it directly. No network, no tunnels.
+              </p>
+
+              <div className="info-card">
+                <div className="info-block">
+                  <div className="info-label">MCP Server Path</div>
+                  <div className="info-value">{mcpServerPath || "(loading...)"}</div>
+                  <button
+                    className="button button-ghost"
+                    disabled={!mcpServerPath}
+                    onClick={() => void copyToClipboard(mcpServerPath)}
+                    type="button"
+                  >
+                    Copy Path
+                  </button>
+                </div>
+                <div className="info-block">
+                  <div className="info-label">Claude Desktop Config Snippet</div>
+                  <pre className="info-value" style={{ whiteSpace: "pre", fontSize: 11 }}>{claudeConfigSnippet}</pre>
+                  <button
+                    className="button button-ghost"
+                    disabled={!claudeConfigSnippet}
+                    onClick={() => void copyToClipboard(claudeConfigSnippet)}
+                    type="button"
+                  >
+                    Copy Config
+                  </button>
+                </div>
+              </div>
+
+              <div className="section-heading">
+                <h2 className="section-title">Scope Grants</h2>
+              </div>
+
+              <p className="support-copy">
+                Choose what the MCP server can return. Tools that need a higher scope
+                will return an error until you grant it.
+              </p>
 
               <label className="checkbox-row">
                 <input
                   type="checkbox"
-                  checked={remoteAccessState.enabled}
-                  disabled={isTogglingRemoteAccess}
-                  onChange={(event) => {
-                    void setRemoteAccessEnabled(event.target.checked);
-                  }}
+                  checked={grantedScopes.includes("context:metadata")}
+                  onChange={() => void toggleScope("context:metadata")}
                 />
-                <span>Enable remote access</span>
+                <span><strong>context:metadata</strong> — day names, summaries, search results (low sensitivity)</span>
               </label>
-              <p className={`support-copy ${remoteStatusToneClass}`}>Status: {remoteStatusLine}</p>
-              <p className="support-copy">
-                Remote tool calls respect the approval queue. Keep the app open to
-                approve requests or enable auto-approve.
-              </p>
-              {remoteAccessState.error && <p className="banner banner-warning">{remoteAccessState.error}</p>}
-              {remoteAccessState.enabled && (
-                <div className="info-card">
-                  <div className="info-block">
-                    <div className="info-label">Remote MCP Endpoint</div>
-                    <div className="info-value">
-                      {remoteMcpEndpoint || "(waiting for MCP endpoint...)"}
-                    </div>
-                    <button
-                      className="button button-ghost"
-                      disabled={!remoteMcpEndpoint}
-                      onClick={() => void copyToClipboard(remoteMcpEndpoint)}
-                      type="button"
-                    >
-                      Copy MCP Endpoint
-                    </button>
-                  </div>
-                  <p className="support-copy">
-                    Use the endpoint above for Claude or any remote MCP client.
-                  </p>
+              <label className="checkbox-row">
+                <input
+                  type="checkbox"
+                  checked={grantedScopes.includes("context:ocr")}
+                  onChange={() => void toggleScope("context:ocr")}
+                />
+                <span><strong>context:ocr</strong> — OCR text from your screen (medium sensitivity)</span>
+              </label>
+              <label className="checkbox-row">
+                <input
+                  type="checkbox"
+                  checked={grantedScopes.includes("context:frames")}
+                  onChange={() => void toggleScope("context:frames")}
+                />
+                <span><strong>context:frames</strong> — actual screenshots (high sensitivity)</span>
+              </label>
+
+              {grantedScopes.length > 0 && (
+                <div>
+                  <button className="button button-ghost" onClick={() => void revokeAllScopes()} type="button">
+                    Revoke All Grants
+                  </button>
                 </div>
               )}
 
               <div className="section-heading">
-                <h2 className="section-title">Approval settings</h2>
+                <h2 className="section-title">Background Mode</h2>
               </div>
 
               <label className="checkbox-row">
                 <input
                   type="checkbox"
-                  checked={approvalSettings.autoApproveAllRequests}
-                  onChange={(event) =>
-                    setApprovalSettings((current) => ({
-                      ...current,
-                      autoApproveAllRequests: event.target.checked,
-                    }))
-                  }
+                  checked={runInBackground}
+                  onChange={(event) => void toggleBackground(event.target.checked)}
                 />
-                <span>Auto-approve all requests</span>
+                <span>Keep recording when window is closed (minimize to system tray)</span>
               </label>
-
-              <label className="field-label" htmlFor="approval-timeout">
-                Approval timeout (seconds)
-              </label>
-              <input
-                id="approval-timeout"
-                className="field-input field-input-small"
-                type="number"
-                min={5}
-                value={settingsTimeoutSeconds}
-                onChange={(event) => {
-                  const next = Number(event.target.value);
-                  setSettingsTimeoutSeconds(Number.isFinite(next) ? next : 120);
-                }}
-              />
 
               <div>
                 <button className="button button-primary" onClick={() => void saveAllSettings()} type="button">
@@ -1549,7 +988,6 @@ export default function App() {
         <div className="app-frame">
           <div className="hero-meta">
             <span className={`status-pill ${statusToneClass}`}>{statusLine}</span>
-            <span className={`status-pill ${remoteStatusToneClass}`}>Remote: {remoteStatusLine}</span>
           </div>
         </div>
       </div>

@@ -318,8 +318,38 @@ export type ApprovalRequest = {
   payload: ApprovalPayload;
 };
 
+// ── Scopes & Grants ──────────────────────────────────────────────────────────
+
+export type ContextScope = "context:metadata" | "context:ocr" | "context:frames";
+
+export type ScopeGrant = {
+  clientName: string;
+  scopes: ContextScope[];
+  grantedAt: string;
+  lastUsed: string;
+};
+
+export type GrantsFile = {
+  grants: Record<string, ScopeGrant>;
+};
+
+export type EscalationDecision = "allow-once" | "allow-session" | "always-allow" | "deny";
+
+export type EscalationRequest = {
+  id: string;
+  toolName: string;
+  scopeNeeded: ContextScope;
+  clientId: string;
+  clientName: string;
+  createdAt: string;
+};
+
+export type EscalationResponse = {
+  requestId: string;
+  decision: EscalationDecision;
+};
+
 export type ApprovalSettings = {
-  autoApproveAllRequests: boolean;
   timeoutMs: number;
 };
 

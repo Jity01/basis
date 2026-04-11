@@ -1,158 +1,90 @@
+#!/usr/bin/env node
 import "./loadEnv";
-import { randomUUID } from "crypto";
-import express, { type NextFunction, type Request, type RequestHandler, type Response } from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { mcpAuthRouter, getOAuthProtectedResourceMetadataUrl } from "@modelcontextprotocol/sdk/server/auth/router.js";
-import { requireBearerAuth } from "@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CONTEXT_ROOT } from "@context-manager/config";
-import { getChunkContext, getDayIndex, listDays, readHotBuffer, readHotFrame, readLatestSnapshots } from "@context-manager/core";
+import {
+  getChunkContext,
+  getDayIndex,
+  listDays,
+  readHotBuffer,
+  readHotFrame,
+  readLatestSnapshots,
+  readDayCatalog,
+  readDaySessions,
+  readContext,
+  openIndex,
+  queryByTopic,
+  queryByApp,
+  queryByEntity,
+} from "@context-manager/core";
 import { z } from "zod";
 import {
   formatApprovalPayload,
-  getApprovalSettings,
-  listPendingApprovals,
-  onApprovalRequest,
-  requestApproval,
-  resolveApproval,
-  resolveAllApprovals,
+  checkToolAccess,
   type ApprovalPayload,
-  type ApprovalResolution,
   type ChunkContextApprovalPayload,
   type DayIndexApprovalPayload,
   type DayListApprovalPayload,
   type LiveContextApprovalPayload,
   type LiveFrameApprovalPayload,
   type LiveSnapshotsApprovalPayload,
-  updateApprovalSettings,
 } from "./approval";
-import { getAuthInfoForLocalRequest, oauthProvider } from "./auth";
 
-const MCP_HOST = process.env.MCP_SERVER_HOST?.trim() || "127.0.0.1";
-const MCP_PORT = Number(process.env.MCP_SERVER_PORT || 4821);
+// CRITICAL: All logging must go to stderr because stdout is the MCP transport.
+const log = (msg: string) => process.stderr.write(`[mcp] ${msg}\n`);
 
-type McpSession = {
-  server: McpServer;
-  transport: StreamableHTTPServerTransport;
-};
-
-const mcpSessions: Record<string, McpSession> = {};
-const authRouters = new Map<string, RequestHandler>();
 const DEFAULT_LIST_DAYS_LIMIT = 14;
 
-/** Shown at MCP initialize and prefixed on each tool so agents favor continuity over chat-only state. */
-const CONTEXT_TOOLS_AGENT_INSTRUCTIONS=`The user has been consistently capturing their screen and accumulating data for you. Their intent is for you to use this context so that you understand exactly what they have been doing — you should ALWAYS be in sync with them.
+const CONTEXT_TOOLS_AGENT_INSTRUCTIONS = `The user has been consistently capturing their screen and accumulating data for you. Their intent is for you to use this context so that you understand exactly what they have been doing — you should ALWAYS be in sync with them.
 
 Before you answer any question that touches on the user's work, communications, or projects, use the context tools first. Do not assume you know enough. It is always better to check than to guess.
 
-Whenever you want to ask the user a clarifying question, ask yourself: "Could I answer this by looking at their context instead?" If yes, look it up.
+ALWAYS start with get_context. It costs ~300 tokens and gives you: active projects, recent threads, what the user was last working on, their daily patterns. This is your baseline awareness.
 
-IMPORTANT — YOU HAVE AN INSANELY RICH SOURCE OF DATA. USE IT LIKE CRAZY.
+Then use the search tools for targeted lookup:
+- search_by_topic("react", dateFrom: "2026-04-01") → find all React work this week
+- search_by_app("VS Code") → find all coding sessions
+- search_by_entity("AuthProvider") → find chunks mentioning a specific file
+- get_sessions("2026-04-08") → see today's activity grouped into meaningful sessions
+- get_day_catalog("2026-04-08") → structured metadata for each chunk (topics, apps, entities)
 
-Why is it insanely rich? Because you are getting images of what the user has been seeing throughout their days. You can use it to understand exactly what they're thinking about, what they've been doing, what they are seeing RIGHT NOW. It's like you were there with them all along. You are here to point out all the things they missed. Almost every conversation can be enhanced by you getting more context. You should always strive to figure out where a user is coming from when they ask you to do things.
+For browsing without a specific target, use the older tools:
+- list_days → days with recordings
+- get_day_index → concatenated prose summaries for a day
+- get_chunk_context → deep dive into a specific time block (returns frames + summary)
 
-Almost every time something isn't adding up, it can be solved if you just look at the context. For instance, if the MCP connection randomly stopped working, you can "investigate" by looking at any point where the user was working on the MCP, configuring the MCP setup, etc. You now have such a rich source of data — it's INSANE not to use it like crazy. You can be SO creative with it, and it would suck if you are lazy and too narrow with the usage and make the user re-explain things over and over again.
+For real-time:
+- get_latest_snapshots → most recent screenshots + OCR
+- get_live_context → OCR text timeline of the last 30-60s
+- get_live_frame → single screenshot by timestamp
 
-Don't just look at one day. Don't just look at one chunk. Scan multiple days, cross-reference topics, and build a full picture. The tools are designed to work with your strengths as a model — connecting dots, noticing patterns, synthesizing across sources. Use your skills maximally.
+BIAS TOWARDS FRESH DATA: Most of the time, the relevant context happened today. Start with today's data and work backwards.
 
-BIAS TOWARDS FRESH DATA: Most of the time, the context relevant to what the user is asking about happened today. Start with today's chunks and work backwards. Don't apply this rule shallowly everywhere — sometimes you need to go back days or weeks — but recognize this very real pattern: users usually ask about things they were just doing.
+The key insight: one question often requires MULTIPLE rounds of lookup across MULTIPLE days and topics. Don't stop after one call. The more creative you are with your lookups, the more useful you become.`;
 
-EXAMPLE 1 — Multi-round lookup (responding to an email):
-
-User: "I got an email from Caleb about the onboarding flow — help me respond."
-
-Often, one question touches on multiple different things and requires multiple rounds of lookup. Here, you need: (1) what the email says, and (2) what the user has been doing on the onboarding flow. These are probably in different chunks.
-
-Round 1 — Find recent days:
-  → list_days(limit: 3)
-
-Round 2 — Scan today first:
-  → get_day_index(date: "2026-04-04")
-  → Look for chunks mentioning "Gmail", "Caleb", or "email"
-
-Round 3 — Get the email content:
-  → get_chunk_context(chunkKey: "2026-04-04/14-30")
-
-Round 4 — Find project context (maybe on a DIFFERENT day):
-  → get_day_index on previous days too, scan for "onboarding", "Figma", or the relevant codebase
-
-Round 5 — Get the project details:
-  → get_chunk_context on the relevant chunks
-  → Now you know what Caleb said AND what the user has been building, what decisions were made, what's still open
-
-EXAMPLE 2 — Investigation (debugging something):
-
-User: "the MCP connection keeps dropping, what's going on?"
-
-Don't just say "I don't know." INVESTIGATE.
-  → list_days, then scan multiple day indexes for any chunks where the user was configuring, debugging, or discussing the MCP setup
-  → Pull chunks from different days — maybe they changed a setting on Monday, hit an error on Tuesday, and discussed it with their cofounder on Wednesday
-  → Cross-reference: was the tunnel code changed? Was there a deploy? Did the user switch networks?
-  → Build a timeline of what happened, then give a real answer
-
-The key insight: one question often requires MULTIPLE rounds of lookup across MULTIPLE days and topics. Don't stop after one call. Don't limit yourself to one day. The more creative you are with your lookups, the more useful you become.
-
-REAL-TIME CONTEXT — get_latest_snapshots, get_live_context, get_live_frame
-
-You now have three additional tools for real-time screen context:
-
-get_latest_snapshots(count?) → Returns the last N screenshots (default 2) + their OCR text and app/window metadata. Images + text in one call. ~3-4K tokens for 2 snapshots.
-
-get_live_context(lastNSeconds?) → Returns an OCR text timeline for the last 30-60 seconds. Text only, no images. ~500-1500 tokens.
-
-get_live_frame(timestamp) → Returns a single screenshot by timestamp. Get timestamps from get_live_context. ~1500 tokens.
-
-These are real-time — no processing delay. The data comes from a local hot buffer that captures a screenshot every 2 seconds with local OCR.
-
-The existing tools (list_days, get_day_index, get_chunk_context) cover processed historical context. The new tools cover what's happening right now. Use whatever combination makes sense for the situation.`;
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
 type TextToolContent = { type: "text"; text: string };
 type ImageToolContent = { type: "image"; data: string; mimeType: string };
 type ToolContent = TextToolContent | ImageToolContent;
-type ToolResult = {
-  content: ToolContent[];
-  isError?: boolean;
-};
-
-function getBaseUrl(req: Request): string {
-  const forwardedProto = String(req.headers["x-forwarded-proto"] || "")
-    .split(",")[0]
-    ?.trim();
-  const proto = forwardedProto || req.protocol || "http";
-  const host = String(req.headers.host || `${MCP_HOST}:${MCP_PORT}`).trim();
-  return `${proto}://${host}`;
-}
-
-function sendJson(res: Response, statusCode: number, payload: unknown): void {
-  res.status(statusCode).json(payload);
-}
+type ToolResult = { content: ToolContent[]; isError?: boolean };
 
 function makeTextResult(text: string, isError = false): ToolResult {
-  return {
-    content: [{ type: "text", text }],
-    ...(isError ? { isError: true } : {}),
-  };
+  return { content: [{ type: "text", text }], ...(isError ? { isError: true } : {}) };
 }
 
-async function approvePayloadOrError(
-  query: string,
-  title: string,
+/** Scope check. Returns approved payload, or an error result. */
+async function checkAccessOrError(
+  toolName: string,
   payload: ApprovalPayload
 ): Promise<{ approvedPayload: ApprovalPayload } | ToolResult> {
-  const approval = await requestApproval({
-    query,
-    title,
-    payload,
-  });
-  if (approval.status === "rejected") {
-    return makeTextResult("User declined to share this context.", true);
+  const result = await checkToolAccess(toolName, "local", "Local Client");
+  if (!result.allowed) {
+    return makeTextResult(result.error, true);
   }
-  if (approval.status === "timeout") {
-    return makeTextResult("Request timed out.", true);
-  }
-  return { approvedPayload: approval.approvedPayload ?? payload };
+  return { approvedPayload: payload };
 }
-
 
 function toolResultFromPayload(payload: ApprovalPayload): ToolResult {
   switch (payload.kind) {
@@ -177,8 +109,7 @@ function toolResultFromPayload(payload: ApprovalPayload): ToolResult {
         const secsAgo = Math.round((Date.now() - item.timestamp) / 1000);
         content.push({
           type: "text",
-          text: `[${secsAgo}s ago] ${item.app} — ${item.windowTitle}
-OCR: ${item.ocrText}`,
+          text: `[${secsAgo}s ago] ${item.app} — ${item.windowTitle}\nOCR: ${item.ocrText}`,
         });
         content.push({
           type: "image",
@@ -193,199 +124,18 @@ OCR: ${item.ocrText}`,
   }
 }
 
-function createMcpServer(): McpServer {
-  const server = new McpServer(
-    {
-      name: "context-manager-mcp-server",
-      version: "0.0.1",
-    },
-    {
-      instructions: CONTEXT_TOOLS_AGENT_INSTRUCTIONS,
-    }
-  );
+// ── Tool implementations ─────────────────────────────────────────────────────
 
-  server.registerTool(
-    "list_days",
-    {
-      description:
-        "CALL BEFORE ASKING CLARIFYING QUESTIONS about user context it lists screen activity days. Call this FIRST whenever the user asks about their work, projects, communications, or anything they were doing. Returns day-level summaries to help you identify which days to drill into.",
-      inputSchema: {
-        limit: z
-          .number()
-          .int()
-          .min(1)
-          .max(100)
-          .optional()
-          .describe("Optional maximum number of days to return (defaults to 14)."),
-        contextRoot: z
-          .string()
-          .optional()
-          .describe("Optional override for context root directory (defaults to CONTEXT_ROOT)."),
-      },
-    },
-    async ({ limit, contextRoot }) => {
-      return await runListDays({ limit, contextRoot });
-    }
-  );
-
-  server.registerTool(
-    "get_day_index",
-    {
-      description:
-        "Scans a specific day's activity to return what the user was doing throughout that day — apps used, topics covered, communications. Use this to find the right time chunks before calling get_chunk_context.",
-      inputSchema: {
-        date: z.string().describe("Day to inspect, formatted as YYYY-MM-DD."),
-        contextRoot: z
-          .string()
-          .optional()
-          .describe("Optional override for context root directory (defaults to CONTEXT_ROOT)."),
-      },
-    },
-    async ({ date, contextRoot }) => {
-      return await runGetDayIndex({ date, contextRoot });
-    }
-  );
-
-  server.registerTool(
-    "get_chunk_context",
-    {
-      description:
-        "Deep-dive into a specific time block returns detailed summaries and actual screenshots of what the user was seeing. Use this when you need the actual content — emails, code, documents, conversations.",
-      inputSchema: {
-        chunkKey: z
-          .string()
-          .describe("Chunk key to inspect, formatted as YYYY-MM-DD/HH-MM."),
-        contextRoot: z
-          .string()
-          .optional()
-          .describe("Optional override for context root directory (defaults to CONTEXT_ROOT)."),
-      },
-    },
-    async ({ chunkKey, contextRoot }) => {
-      return await runGetChunkContext({ chunkKey, contextRoot });
-    }
-  );
-
-  server.registerTool(
-    "get_live_context",
-    {
-      description: `Returns the user's screen activity for the last 30-60 seconds as a timeline of OCR'd text with app and window info. Each entry is 2 seconds apart. Use this to understand what the user is CURRENTLY doing or JUST did — this is real-time, with no processing delay.
-
-Use get_live_context when:
-- The user says "help me with this" or references something on their screen
-- You want to understand the user's current task before responding
-- The user types "ct" (context trigger shortcut)
-
-Use get_day_index + get_chunk_context (not this tool) when:
-- The user references something from earlier today or previous days
-- You need to investigate project history across multiple days`,
-      inputSchema: {
-        lastNSeconds: z
-          .number()
-          .min(1)
-          .max(60)
-          .optional()
-          .describe("How many seconds of recent activity to return. Default 30. Max 60."),
-        contextRoot: z
-          .string()
-          .optional()
-          .describe("Optional override for context root directory (defaults to CONTEXT_ROOT)."),
-      },
-    },
-    async ({ lastNSeconds, contextRoot }) => {
-      return await runGetLiveContext({ lastNSeconds, contextRoot });
-    }
-  );
-
-  server.registerTool(
-    "get_live_frame",
-    {
-      description: `Returns a specific screenshot from the live buffer by timestamp. Use this when OCR text from get_live_context isn't sufficient — for example, when the user was looking at a diagram, UI mockup, image, or anything visual that OCR can't capture well. Get the timestamp from get_live_context results first.`,
-      inputSchema: {
-        timestamp: z.number().describe("Unix timestamp (ms) of the frame to retrieve."),
-        contextRoot: z
-          .string()
-          .optional()
-          .describe("Optional override for context root directory (defaults to CONTEXT_ROOT)."),
-      },
-    },
-    async ({ timestamp, contextRoot }) => {
-      return await runGetLiveFrame({ timestamp, contextRoot });
-    }
-  );
-
-  server.registerTool(
-    "get_latest_snapshots",
-    {
-      description: `Returns the most recent screenshots (default 2) from the live buffer, including both the images AND their OCR text/metadata. This is the fast path — use it when you want to immediately see what's on the user's screen right now without needing to browse the text timeline first.
-
-Use get_latest_snapshots when:
-- You want to quickly see what the user is looking at RIGHT NOW
-- The user says "look at this", "help me with this", "what do you see"
-- You need both visual and text context in one call
-
-Use get_live_context instead when:
-- You want to browse a longer timeline (30-60s) of activity as text
-- You're searching for a specific moment or app switch
-- You want to minimize token usage`,
-      inputSchema: {
-        count: z
-          .number()
-          .min(1)
-          .max(5)
-          .optional()
-          .describe("Number of most recent snapshots to return. Default 2. Max 5."),
-        contextRoot: z
-          .string()
-          .optional()
-          .describe("Optional override for context root directory (defaults to CONTEXT_ROOT)."),
-      },
-    },
-    async ({ count, contextRoot }) => {
-      return await runGetLatestSnapshots({ count, contextRoot });
-    }
-  );
-
-  return server;
-}
-
-async function runListDays(args: unknown): Promise<ToolResult> {
-  if (!args || typeof args !== "object") {
-    throw new Error("list_days requires an arguments object.");
-  }
-  const limitInput = (args as { limit?: unknown }).limit;
-  const contextRootInput = String((args as { contextRoot?: unknown }).contextRoot || "").trim();
-  const contextRoot = contextRootInput || CONTEXT_ROOT;
-  const limit =
-    typeof limitInput === "number" && Number.isFinite(limitInput)
-      ? Math.max(1, Math.trunc(limitInput))
-      : DEFAULT_LIST_DAYS_LIMIT;
-
+async function runListDays(limit: number, contextRoot: string): Promise<ToolResult> {
   const days = await listDays(contextRoot, limit);
-  const payload: DayListApprovalPayload = {
-    kind: "day_list",
-    days,
-  };
-  const approval = await approvePayloadOrError("Share context day list", "Share context day list", payload);
-  if ("content" in approval) {
-    return approval;
-  }
-
+  const payload: DayListApprovalPayload = { kind: "day_list", days };
+  const approval = await checkAccessOrError("list_days", payload);
+  if ("content" in approval) return approval;
   return toolResultFromPayload(approval.approvedPayload);
 }
 
-async function runGetDayIndex(args: unknown): Promise<ToolResult> {
-  if (!args || typeof args !== "object") {
-    throw new Error("get_day_index requires an arguments object.");
-  }
-  const date = String((args as { date?: unknown }).date || "").trim();
-  const contextRootInput = String((args as { contextRoot?: unknown }).contextRoot || "").trim();
-  const contextRoot = contextRootInput || CONTEXT_ROOT;
-
-  if (!date) {
-    throw new Error("get_day_index requires a non-empty date.");
-  }
-
+async function runGetDayIndex(date: string, contextRoot: string): Promise<ToolResult> {
+  if (!date) throw new Error("get_day_index requires a non-empty date.");
   const day = await getDayIndex(date, contextRoot);
   const payload: DayIndexApprovalPayload = {
     kind: "day_index",
@@ -394,30 +144,13 @@ async function runGetDayIndex(args: unknown): Promise<ToolResult> {
     chunkKeys: day.chunkKeys,
     indexText: day.indexText,
   };
-  const approval = await approvePayloadOrError(
-    `Share context day ${day.date}`,
-    `Share context day ${day.date}`,
-    payload
-  );
-  if ("content" in approval) {
-    return approval;
-  }
-
+  const approval = await checkAccessOrError("get_day_index", payload);
+  if ("content" in approval) return approval;
   return toolResultFromPayload(approval.approvedPayload);
 }
 
-async function runGetChunkContext(args: unknown): Promise<ToolResult> {
-  if (!args || typeof args !== "object") {
-    throw new Error("get_chunk_context requires an arguments object.");
-  }
-  const chunkKey = String((args as { chunkKey?: unknown }).chunkKey || "").trim();
-  const contextRootInput = String((args as { contextRoot?: unknown }).contextRoot || "").trim();
-  const contextRoot = contextRootInput || CONTEXT_ROOT;
-
-  if (!chunkKey) {
-    throw new Error("get_chunk_context requires a non-empty chunkKey.");
-  }
-
+async function runGetChunkContext(chunkKey: string, contextRoot: string): Promise<ToolResult> {
+  if (!chunkKey) throw new Error("get_chunk_context requires a non-empty chunkKey.");
   const chunk = await getChunkContext(chunkKey, contextRoot);
   const payload: ChunkContextApprovalPayload = {
     kind: "chunk_context",
@@ -432,30 +165,12 @@ async function runGetChunkContext(args: unknown): Promise<ToolResult> {
       data: frame.data,
     })),
   };
-  const approval = await approvePayloadOrError(
-    `Share chunk ${chunk.chunkKey}`,
-    `Share chunk ${chunk.chunkKey}`,
-    payload
-  );
-  if ("content" in approval) {
-    return approval;
-  }
-
+  const approval = await checkAccessOrError("get_chunk_context", payload);
+  if ("content" in approval) return approval;
   return toolResultFromPayload(approval.approvedPayload);
 }
 
-async function runGetLiveContext(args: unknown): Promise<ToolResult> {
-  if (!args || typeof args !== "object") {
-    throw new Error("get_live_context requires an arguments object.");
-  }
-  const lastNRaw = (args as { lastNSeconds?: unknown }).lastNSeconds;
-  const lastN =
-    typeof lastNRaw === "number" && Number.isFinite(lastNRaw)
-      ? Math.min(60, Math.max(1, Math.trunc(lastNRaw)))
-      : 30;
-  const contextRootInput = String((args as { contextRoot?: unknown }).contextRoot || "").trim();
-  const contextRoot = contextRootInput || CONTEXT_ROOT;
-
+async function runGetLiveContext(lastN: number, contextRoot: string): Promise<ToolResult> {
   const entries = readHotBuffer(lastN, contextRoot);
   if (entries.length === 0) {
     return makeTextResult("Hot buffer is empty — recording may not be active.");
@@ -467,57 +182,27 @@ async function runGetLiveContext(args: unknown): Promise<ToolResult> {
     })
     .join("\n\n---\n\n");
   const timelineText = `Live context (last ${lastN}s, ${entries.length} snapshots):\n\n${timeline}`;
-  const payload: LiveContextApprovalPayload = {
-    kind: "live_context",
-    timelineText,
-  };
-  const approval = await approvePayloadOrError("Share live screen context", "Share live screen context", payload);
-  if ("content" in approval) {
-    return approval;
-  }
+  const payload: LiveContextApprovalPayload = { kind: "live_context", timelineText };
+  const approval = await checkAccessOrError("get_live_context", payload);
+  if ("content" in approval) return approval;
   return toolResultFromPayload(approval.approvedPayload);
 }
 
-async function runGetLiveFrame(args: unknown): Promise<ToolResult> {
-  if (!args || typeof args !== "object") {
-    throw new Error("get_live_frame requires an arguments object.");
-  }
-  const ts = (args as { timestamp?: unknown }).timestamp;
-  if (typeof ts !== "number" || !Number.isFinite(ts)) {
-    throw new Error("get_live_frame requires a numeric timestamp.");
-  }
-  const contextRootInput = String((args as { contextRoot?: unknown }).contextRoot || "").trim();
-  const contextRoot = contextRootInput || CONTEXT_ROOT;
-
-  const frame = readHotFrame(ts, contextRoot);
-  if (!frame) {
-    return makeTextResult("Frame not found — it may have been purged.");
-  }
+async function runGetLiveFrame(timestamp: number, contextRoot: string): Promise<ToolResult> {
+  const frame = readHotFrame(timestamp, contextRoot);
+  if (!frame) return makeTextResult("Frame not found — it may have been purged.");
   const payload: LiveFrameApprovalPayload = {
     kind: "live_frame",
-    timestamp: ts,
+    timestamp,
     mimeType: "image/jpeg",
     data: frame.toString("base64"),
   };
-  const approval = await approvePayloadOrError("Share live screenshot", "Share live screenshot", payload);
-  if ("content" in approval) {
-    return approval;
-  }
+  const approval = await checkAccessOrError("get_live_frame", payload);
+  if ("content" in approval) return approval;
   return toolResultFromPayload(approval.approvedPayload);
 }
 
-async function runGetLatestSnapshots(args: unknown): Promise<ToolResult> {
-  if (!args || typeof args !== "object") {
-    throw new Error("get_latest_snapshots requires an arguments object.");
-  }
-  const countRaw = (args as { count?: unknown }).count;
-  const count =
-    typeof countRaw === "number" && Number.isFinite(countRaw)
-      ? Math.min(5, Math.max(1, Math.trunc(countRaw)))
-      : 2;
-  const contextRootInput = String((args as { contextRoot?: unknown }).contextRoot || "").trim();
-  const contextRoot = contextRootInput || CONTEXT_ROOT;
-
+async function runGetLatestSnapshots(count: number, contextRoot: string): Promise<ToolResult> {
   const snapshots = readLatestSnapshots(count, contextRoot);
   if (snapshots.length === 0) {
     return makeTextResult("Hot buffer is empty — recording may not be active.");
@@ -533,252 +218,256 @@ async function runGetLatestSnapshots(args: unknown): Promise<ToolResult> {
       data: snap.frameBuffer.toString("base64"),
     },
   }));
-  const payload: LiveSnapshotsApprovalPayload = {
-    kind: "live_snapshots",
-    items,
-  };
-  const approval = await approvePayloadOrError(
-    "Share live snapshots",
-    "Share live snapshots",
-    payload
-  );
-  if ("content" in approval) {
-    return approval;
-  }
+  const payload: LiveSnapshotsApprovalPayload = { kind: "live_snapshots", items };
+  const approval = await checkAccessOrError("get_latest_snapshots", payload);
+  if ("content" in approval) return approval;
   return toolResultFromPayload(approval.approvedPayload);
 }
 
-function isInitializePayload(body: unknown): boolean {
-  if (!body || typeof body !== "object") {
-    return false;
-  }
-  return (body as { method?: unknown }).method === "initialize";
-}
+// ── Server setup ─────────────────────────────────────────────────────────────
 
-function getAuthRouter(baseUrlString: string): RequestHandler {
-  const existing = authRouters.get(baseUrlString);
-  if (existing) {
-    return existing;
-  }
-
-  const baseUrl = new URL(baseUrlString);
-  const router = mcpAuthRouter({
-    provider: oauthProvider,
-    issuerUrl: baseUrl,
-    baseUrl,
-    resourceServerUrl: new URL("/mcp", baseUrl),
-    scopesSupported: ["mcp:tools"],
-    resourceName: "Context Manager MCP",
-    authorizationOptions: { rateLimit: false },
-    tokenOptions: { rateLimit: false },
-    clientRegistrationOptions: { rateLimit: false },
-  });
-  authRouters.set(baseUrlString, router);
-  return router;
-}
-
-function authRouterMiddleware(req: Request, res: Response, next: NextFunction): void {
-  if (
-    req.path === "/authorize" ||
-    req.path === "/token" ||
-    req.path === "/register" ||
-    req.path === "/revoke" ||
-    req.path === "/.well-known/oauth-authorization-server" ||
-    req.path === "/.well-known/oauth-protected-resource" ||
-    req.path === "/.well-known/oauth-protected-resource/mcp"
-  ) {
-    console.log(`[mcp-auth] ${req.method} ${req.path}`);
-  }
-  getAuthRouter(getBaseUrl(req))(req, res, next);
-}
-
-function requireMcpBearerAuth(req: Request, res: Response, next: NextFunction): void {
-  const resourceMetadataUrl = getOAuthProtectedResourceMetadataUrl(new URL("/mcp", getBaseUrl(req)));
-  requireBearerAuth({
-    verifier: oauthProvider,
-    requiredScopes: ["mcp:tools"],
-    resourceMetadataUrl,
-  })(req, res, next);
-}
-
-async function handleMcpRequest(req: Request, res: Response): Promise<void> {
-  const sessionId = String(req.headers["mcp-session-id"] || "").trim();
-  const existingSession = sessionId ? mcpSessions[sessionId] : undefined;
-
-  if (req.method === "GET" || req.method === "DELETE") {
-    if (!existingSession) {
-      sendJson(res, 400, { error: "Invalid or missing session ID." });
-      return;
-    }
-    console.log(`[mcp] ${req.method} /mcp session=${sessionId}`);
-    await existingSession.transport.handleRequest(req, res);
-    return;
-  }
-
-  if (req.method !== "POST") {
-    sendJson(res, 404, { error: "Not found" });
-    return;
-  }
-
-  const parsedBody = req.body ?? {};
-  const method = typeof parsedBody?.method === "string" ? parsedBody.method : "(unknown)";
-  console.log(`[mcp] POST /mcp method=${method} session=${sessionId || "(new)"}`);
-
-  let session = existingSession;
-  if (!session) {
-    if (sessionId || !isInitializePayload(parsedBody)) {
-      sendJson(res, 400, {
-        jsonrpc: "2.0",
-        error: {
-          code: -32000,
-          message: "Bad Request: No valid session ID provided.",
-        },
-        id: null,
-      });
-      return;
-    }
-
-    let mcpServer!: McpServer;
-    const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: () => randomUUID(),
-      enableJsonResponse: true,
-      onsessioninitialized: (newSessionId) => {
-        mcpSessions[newSessionId] = {
-          server: mcpServer,
-          transport,
-        };
-      },
-    });
-
-    mcpServer = createMcpServer();
-    transport.onclose = () => {
-      const activeSessionId = transport.sessionId;
-      if (activeSessionId) {
-        delete mcpSessions[activeSessionId];
-      }
-      void mcpServer.close();
-    };
-    await mcpServer.connect(transport);
-    session = {
-      server: mcpServer,
-      transport,
-    };
-  }
-
-  await session.transport.handleRequest(req, res, parsedBody);
-}
-
-const app = express();
-app.set("trust proxy", true);
-app.use(express.json({ limit: "5mb" }));
-
-app.get("/auth/info", (req, res) => {
-  const authInfo = getAuthInfoForLocalRequest(req);
-  if (!authInfo.ok) {
-    sendJson(res, authInfo.statusCode, { error: authInfo.error });
-    return;
-  }
-  sendJson(res, 200, { authToken: authInfo.authToken });
-});
-
-app.get("/approvals/settings", (_req, res) => {
-  sendJson(res, 200, getApprovalSettings());
-});
-
-app.post("/approvals/settings", (req, res) => {
-  const body = req.body as {
-    autoApproveAllRequests?: unknown;
-    timeoutMs?: unknown;
-  };
-  const settings = updateApprovalSettings({
-    autoApproveAllRequests:
-      typeof body.autoApproveAllRequests === "boolean" ? body.autoApproveAllRequests : undefined,
-    timeoutMs: typeof body.timeoutMs === "number" ? body.timeoutMs : undefined,
-  });
-  sendJson(res, 200, settings);
-});
-
-app.get("/approvals/pending", (_req, res) => {
-  sendJson(res, 200, { pending: listPendingApprovals(), settings: getApprovalSettings() });
-});
-
-app.post("/approvals/approve-all", (_req, res) => {
-  const resolvedCount = resolveAllApprovals("approved");
-  sendJson(res, 200, { ok: true, resolvedCount });
-});
-
-app.post("/approvals/:id", (req, res) => {
-  const requestId = String(req.params.id || "").trim();
-  if (!requestId) {
-    sendJson(res, 400, { error: "Missing approval request id." });
-    return;
-  }
-  const body = req.body as { resolution?: unknown; approved?: unknown; approvedPayload?: unknown };
-  const resolution: ApprovalResolution =
-    body?.resolution === "approved" || body?.approved === true ? "approved" : "rejected";
-  const ok = resolveApproval(requestId, resolution, body?.approvedPayload);
-  if (!ok) {
-    sendJson(res, 404, { error: `No pending approval found for id ${requestId}` });
-    return;
-  }
-  sendJson(res, 200, { ok: true, requestId, resolution });
-});
-
-app.get("/health", (_req, res) => {
-  sendJson(res, 200, { ok: true });
-});
-
-app.use(authRouterMiddleware);
-
-app.all("/mcp", requireMcpBearerAuth, async (req, res) => {
-  try {
-    await handleMcpRequest(req, res);
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    sendJson(res, 500, {
-      jsonrpc: "2.0",
-      id: null,
-      error: { code: -32001, message },
-    });
-  }
-});
-
-app.use((_req, res) => {
-  sendJson(res, 404, { error: "Not found" });
-});
-
-onApprovalRequest((request) => {
-  console.log(`[MCP approval] pending id=${request.id} query="${request.query}"`);
-
-  if (typeof process.send === "function") {
-    process.send({
-      type: "mcp-approval-request",
-      payload: request,
-    });
-  }
-});
-
-process.on("message", (msg: unknown) => {
-  const payload = msg as {
-    type?: string;
-    payload?: { requestId?: unknown; resolution?: unknown; approvedPayload?: unknown };
-  };
-  if (payload?.type !== "mcp-approval-response") {
-    return;
-  }
-  const requestId = String(payload.payload?.requestId || "").trim();
-  const resolution = payload.payload?.resolution;
-  if (!requestId || (resolution !== "approved" && resolution !== "rejected")) {
-    return;
-  }
-  resolveApproval(requestId, resolution, payload.payload?.approvedPayload);
-});
-
-app.listen(MCP_PORT, MCP_HOST, () => {
-  console.log(`[MCP] listening on http://${MCP_HOST}:${MCP_PORT}`);
-  console.log(`[MCP] endpoint: Streamable HTTP /mcp`);
-  console.log(`[MCP] auth: /.well-known/oauth-authorization-server, /authorize, /token, /register`);
-  console.log(
-    `[MCP] approvals: GET /approvals/pending, POST /approvals/:id, POST /approvals/approve-all`
+function createMcpServer(): McpServer {
+  const server = new McpServer(
+    { name: "basis-mcp-server", version: "0.0.1" },
+    { instructions: CONTEXT_TOOLS_AGENT_INSTRUCTIONS }
   );
+
+  // Historical tools
+  server.registerTool(
+    "list_days",
+    {
+      description: "Lists screen activity days. Use to identify which days to drill into.",
+      inputSchema: {
+        limit: z.number().int().min(1).max(100).optional().describe("Max days to return (default 14)."),
+        contextRoot: z.string().optional(),
+      },
+    },
+    async ({ limit, contextRoot }) =>
+      runListDays(limit ?? DEFAULT_LIST_DAYS_LIMIT, contextRoot?.trim() || CONTEXT_ROOT)
+  );
+
+  server.registerTool(
+    "get_day_index",
+    {
+      description: "Returns concatenated prose summaries for all chunks in a day.",
+      inputSchema: {
+        date: z.string().describe("YYYY-MM-DD"),
+        contextRoot: z.string().optional(),
+      },
+    },
+    async ({ date, contextRoot }) =>
+      runGetDayIndex(date, contextRoot?.trim() || CONTEXT_ROOT)
+  );
+
+  server.registerTool(
+    "get_chunk_context",
+    {
+      description: "Deep-dive into a specific 5-minute chunk. Returns summary + 5 screenshots.",
+      inputSchema: {
+        chunkKey: z.string().describe("YYYY-MM-DD/HH-MM"),
+        contextRoot: z.string().optional(),
+      },
+    },
+    async ({ chunkKey, contextRoot }) =>
+      runGetChunkContext(chunkKey, contextRoot?.trim() || CONTEXT_ROOT)
+  );
+
+  // Real-time tools
+  server.registerTool(
+    "get_live_context",
+    {
+      description: "Returns OCR text timeline for the last 30-60 seconds. Real-time, no processing delay.",
+      inputSchema: {
+        lastNSeconds: z.number().min(1).max(60).optional(),
+        contextRoot: z.string().optional(),
+      },
+    },
+    async ({ lastNSeconds, contextRoot }) =>
+      runGetLiveContext(lastNSeconds ?? 30, contextRoot?.trim() || CONTEXT_ROOT)
+  );
+
+  server.registerTool(
+    "get_live_frame",
+    {
+      description: "Returns a single screenshot by timestamp. Get timestamps from get_live_context.",
+      inputSchema: {
+        timestamp: z.number().describe("Unix timestamp (ms)"),
+        contextRoot: z.string().optional(),
+      },
+    },
+    async ({ timestamp, contextRoot }) =>
+      runGetLiveFrame(timestamp, contextRoot?.trim() || CONTEXT_ROOT)
+  );
+
+  server.registerTool(
+    "get_latest_snapshots",
+    {
+      description: "Returns the last N screenshots + OCR + app/window metadata. Default 2.",
+      inputSchema: {
+        count: z.number().min(1).max(5).optional(),
+        contextRoot: z.string().optional(),
+      },
+    },
+    async ({ count, contextRoot }) =>
+      runGetLatestSnapshots(count ?? 2, contextRoot?.trim() || CONTEXT_ROOT)
+  );
+
+  // Structured query tools
+  server.registerTool(
+    "get_context",
+    {
+      description: "CALL THIS FIRST. Returns rolling context: active projects, recent threads, last session, daily patterns. ~300 tokens.",
+      inputSchema: { contextRoot: z.string().optional() },
+    },
+    async ({ contextRoot }) => {
+      const root = contextRoot?.trim() || CONTEXT_ROOT;
+      const access = await checkToolAccess("get_context", "local", "Local Client");
+      if (!access.allowed) return makeTextResult(access.error, true);
+      const ctx = await readContext(root);
+      return { content: [{ type: "text" as const, text: JSON.stringify(ctx, null, 2) }] };
+    }
+  );
+
+  server.registerTool(
+    "search_by_topic",
+    {
+      description: "Search the activity index for chunks matching a topic tag (e.g. 'react', 'debugging').",
+      inputSchema: {
+        topic: z.string(),
+        dateFrom: z.string().optional().describe("YYYY-MM-DD"),
+        dateTo: z.string().optional().describe("YYYY-MM-DD"),
+        contextRoot: z.string().optional(),
+      },
+    },
+    async ({ topic, dateFrom, dateTo, contextRoot }) => {
+      const root = contextRoot?.trim() || CONTEXT_ROOT;
+      const access = await checkToolAccess("search_by_topic", "local", "Local Client");
+      if (!access.allowed) return makeTextResult(access.error, true);
+      const db = openIndex(root);
+      try {
+        const chunkKeys = queryByTopic(db, topic, dateFrom, dateTo);
+        const results = chunkKeys.map((key) => {
+          const row = db.prepare("SELECT primary_intent, summary_preview FROM chunks WHERE chunk_key = ?").get(key) as { primary_intent: string; summary_preview: string } | undefined;
+          return { chunk_key: key, primary_intent: row?.primary_intent || "", summary_preview: row?.summary_preview || "" };
+        });
+        return { content: [{ type: "text" as const, text: JSON.stringify({ topic, matches: results.length, results }, null, 2) }] };
+      } finally {
+        db.close();
+      }
+    }
+  );
+
+  server.registerTool(
+    "search_by_app",
+    {
+      description: "Search the activity index for chunks where a specific application was used.",
+      inputSchema: {
+        app: z.string(),
+        dateFrom: z.string().optional(),
+        dateTo: z.string().optional(),
+        contextRoot: z.string().optional(),
+      },
+    },
+    async ({ app, dateFrom, dateTo, contextRoot }) => {
+      const root = contextRoot?.trim() || CONTEXT_ROOT;
+      const access = await checkToolAccess("search_by_app", "local", "Local Client");
+      if (!access.allowed) return makeTextResult(access.error, true);
+      const db = openIndex(root);
+      try {
+        const chunkKeys = queryByApp(db, app, dateFrom, dateTo);
+        const results = chunkKeys.map((key) => {
+          const row = db.prepare("SELECT primary_intent, summary_preview FROM chunks WHERE chunk_key = ?").get(key) as { primary_intent: string; summary_preview: string } | undefined;
+          return { chunk_key: key, primary_intent: row?.primary_intent || "", summary_preview: row?.summary_preview || "" };
+        });
+        return { content: [{ type: "text" as const, text: JSON.stringify({ app, matches: results.length, results }, null, 2) }] };
+      } finally {
+        db.close();
+      }
+    }
+  );
+
+  server.registerTool(
+    "search_by_entity",
+    {
+      description: "Search the activity index for chunks mentioning a specific entity (file, URL, person, project, error). Partial match.",
+      inputSchema: {
+        entity: z.string(),
+        contextRoot: z.string().optional(),
+      },
+    },
+    async ({ entity, contextRoot }) => {
+      const root = contextRoot?.trim() || CONTEXT_ROOT;
+      const access = await checkToolAccess("search_by_entity", "local", "Local Client");
+      if (!access.allowed) return makeTextResult(access.error, true);
+      const db = openIndex(root);
+      try {
+        const chunkKeys = queryByEntity(db, entity);
+        const results = chunkKeys.map((key) => {
+          const row = db.prepare("SELECT primary_intent, summary_preview FROM chunks WHERE chunk_key = ?").get(key) as { primary_intent: string; summary_preview: string } | undefined;
+          return { chunk_key: key, primary_intent: row?.primary_intent || "", summary_preview: row?.summary_preview || "" };
+        });
+        return { content: [{ type: "text" as const, text: JSON.stringify({ entity, matches: results.length, results }, null, 2) }] };
+      } finally {
+        db.close();
+      }
+    }
+  );
+
+  server.registerTool(
+    "get_sessions",
+    {
+      description: "Returns activity sessions for a day — chunks grouped into meaningful units with synthesized summaries.",
+      inputSchema: {
+        date: z.string().describe("YYYY-MM-DD"),
+        contextRoot: z.string().optional(),
+      },
+    },
+    async ({ date, contextRoot }) => {
+      const root = contextRoot?.trim() || CONTEXT_ROOT;
+      const access = await checkToolAccess("get_sessions", "local", "Local Client");
+      if (!access.allowed) return makeTextResult(access.error, true);
+      const sessions = await readDaySessions(date, root);
+      if (!sessions) {
+        return { content: [{ type: "text" as const, text: `No sessions found for ${date}.` }] };
+      }
+      return { content: [{ type: "text" as const, text: JSON.stringify(sessions, null, 2) }] };
+    }
+  );
+
+  server.registerTool(
+    "get_day_catalog",
+    {
+      description: "Returns the structured chunk catalog for a day with topics, apps, entities, activity types, and intent.",
+      inputSchema: {
+        date: z.string().describe("YYYY-MM-DD"),
+        contextRoot: z.string().optional(),
+      },
+    },
+    async ({ date, contextRoot }) => {
+      const root = contextRoot?.trim() || CONTEXT_ROOT;
+      const access = await checkToolAccess("get_day_catalog", "local", "Local Client");
+      if (!access.allowed) return makeTextResult(access.error, true);
+      const catalog = await readDayCatalog(date, root);
+      if (!catalog) {
+        return { content: [{ type: "text" as const, text: `No catalog found for ${date}.` }] };
+      }
+      return { content: [{ type: "text" as const, text: JSON.stringify(catalog, null, 2) }] };
+    }
+  );
+
+  return server;
+}
+
+// ── Bootstrap ────────────────────────────────────────────────────────────────
+
+async function main(): Promise<void> {
+  const server = createMcpServer();
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+  log("Basis MCP server connected via stdio");
+}
+
+main().catch((err) => {
+  log(`Fatal error: ${err instanceof Error ? err.message : String(err)}`);
+  process.exit(1);
 });

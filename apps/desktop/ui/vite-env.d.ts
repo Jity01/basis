@@ -1,15 +1,13 @@
 /// <reference types="vite/client" />
 
 import type {
-  ApprovalPayload,
-  ApprovalState,
   AISettings,
   ChunkSettings,
-  ExclusionEntry,
+  ContextScope,
   ExclusionsConfig,
   InstalledApp,
   ProcessingStatus,
-  RemoteAccessState,
+  ScopeGrant,
   SckitExclusionsInitState,
 } from "@context-manager/config";
 
@@ -36,20 +34,17 @@ interface ContextManagerAPI {
   getDesktopSources: (opts: { types: ("screen" | "window")[] }) => Promise<
     Array<{ id: string; name: string }>
   >;
-  getApprovalState: () => Promise<ApprovalState>;
-  resolveApproval: (
-    requestId: string,
-    resolution: "approved" | "rejected",
-    approvedPayload?: ApprovalPayload
-  ) => Promise<{ ok: boolean }>;
-  approveAllRequests: () => Promise<{ ok: boolean; resolvedCount: number }>;
-  updateApprovalSettings: (settings: Partial<import("@context-manager/config").ApprovalSettings>) => Promise<import("@context-manager/config").ApprovalSettings>;
+  // MCP scope grants
+  getLocalGrant: () => Promise<ScopeGrant | null>;
+  setLocalScopes: (scopes: ContextScope[]) => Promise<ScopeGrant>;
+  revokeLocalGrant: () => Promise<boolean>;
+  getMcpServerPath: () => Promise<string>;
+  // AI settings
   getAISettings: () => Promise<AISettings>;
   updateAISettings: (settings: Partial<AISettings>) => Promise<AISettings>;
-  getRemoteAccessState: () => Promise<RemoteAccessState>;
-  setRemoteAccessEnabled: (enabled: boolean) => Promise<RemoteAccessState>;
-  onRemoteAccessState: (callback: (state: RemoteAccessState) => void) => () => void;
-  onApprovalState: (callback: (state: ApprovalState) => void) => () => void;
+  // Background mode
+  getRunInBackground: () => Promise<boolean>;
+  setRunInBackground: (enabled: boolean) => Promise<boolean>;
 }
 
 declare global {

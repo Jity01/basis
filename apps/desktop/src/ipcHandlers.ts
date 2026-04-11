@@ -1,4 +1,5 @@
 import { app, ipcMain, desktopCapturer } from "electron";
+import * as path from "path";
 import type { BrowserWindow } from "electron";
 import {
   getUnprocessedFiles,
@@ -16,10 +17,8 @@ import {
 import type {
   AISettings,
   ChunkSettings,
+  ContextScope,
   ExclusionsConfig,
-  ApprovalPayload,
-  ApprovalSettings,
-  ApprovalResolution,
 } from "@context-manager/config";
 import { CONTEXT_ROOT, HOT_BUFFER_CONFIG, hotBufferDir } from "@context-manager/config";
 import { inspectAppBundlePath, scanInstalledApps } from "./appScanner";
@@ -44,35 +43,17 @@ import {
   maybeStartLiveProcessing,
   setupIdleProcessing,
 } from "./processing";
-import {
-  initRemoteAccess,
-  teardownRemoteAccess,
-  getRemoteAccessState,
-  emitRemoteAccessState,
-  refreshRemoteAuthToken,
-  setRemoteAccessEnabled,
-} from "./remoteAccess";
-import {
-  fetchApprovalState,
-  postApprovalResolution,
-  postApproveAll,
-  postApprovalSettings,
-  ensureApprovalPolling,
-} from "./approvalBridge";
+import { getLocalGrant, setLocalScopes, revokeLocalGrant } from "./grants";
 
 export function setMainWindow(win: BrowserWindow): void {
   setMainWindowRef(win);
-  ensureApprovalPolling();
-  emitRemoteAccessState();
 }
 
 export function setupIpc(): void {
   app.once("before-quit", () => {
-    teardownRemoteAccess();
     stopHotBuffer();
   });
 
-  initRemoteAccess();
   setupIdleProcessing();
 
   // ── Recording ────────────────────────────────────────────────────────────
@@ -194,44 +175,25 @@ export function setupIpc(): void {
       desktopCapturer.getSources(opts)
   );
 
-  // ── Approvals ────────────────────────────────────────────────────────────
+  // ── MCP scope grants ─────────────────────────────────────────────────────
 
-  ipcMain.handle("get-approval-state", async () => {
-    return await fetchApprovalState();
+  ipcMain.handle("get-local-grant", () => {
+    return getLocalGrant();
   });
 
-  ipcMain.handle(
-    "resolve-approval",
-    async (
-      _event,
-      payload: {
-        requestId: string;
-        resolution: ApprovalResolution;
-        approvedPayload?: ApprovalPayload;
-      }
-    ) => {
-      return await postApprovalResolution(payload.requestId, payload.resolution, payload.approvedPayload);
+  ipcMain.handle("set-local-scopes", (_event, scopes: ContextScope[]) => {
+    return setLocalScopes(Array.isArray(scopes) ? scopes : []);
+  });
+
+  ipcMain.handle("revoke-local-grant", () => {
+    return revokeLocalGrant();
+  });
+
+  ipcMain.handle("get-mcp-server-path", () => {
+    if (app.isPackaged) {
+      return path.join(process.resourcesPath, "mcp-server", "dist", "server.js");
     }
-  );
-
-  ipcMain.handle("approve-all-requests", async () => {
-    return await postApproveAll();
-  });
-
-  ipcMain.handle(
-    "update-approval-settings",
-    async (_event, payload: Partial<ApprovalSettings>) => await postApprovalSettings(payload)
-  );
-
-  // ── Remote access ────────────────────────────────────────────────────────
-
-  ipcMain.handle("get-remote-access-state", async () => {
-    await refreshRemoteAuthToken();
-    return getRemoteAccessState();
-  });
-
-  ipcMain.handle("set-remote-access-enabled", async (_event, enabled: boolean) => {
-    return await setRemoteAccessEnabled(Boolean(enabled));
+    return path.join(__dirname, "..", "..", "mcp_server", "dist", "server.js");
   });
 
   // ── AI settings ──────────────────────────────────────────────────────────

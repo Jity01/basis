@@ -3,20 +3,19 @@
   "version": "0.0.1",
   "private": true,
   "main": "./dist/server.js",
-  "types": "./dist/server.d.ts",
+  "bin": {
+    "basis-mcp": "./dist/server.js"
+  },
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "start": "node dist/server.js",
-    "approval-test": "node ./tests/run-approval-smoke.mjs"
+    "start": "node dist/server.js"
   },
   "dependencies": {
     "@context-manager/config": "workspace:*",
     "@context-manager/core": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "@types/express": "^5.0.6",
     "dotenv": "^16.4.7",
-    "express": "^5.2.1",
     "zod": "^4.3.6"
   },
   "devDependencies": {
