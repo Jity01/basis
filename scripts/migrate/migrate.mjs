@@ -3,7 +3,11 @@
 /**
  * Basis Migration: ~/.context/ → ~/context/
  *
- * Brings old Basis data to the new system:
+ * Brings old Basis data to the new system. NON-DESTRUCTIVE: the original
+ * ~/.context/ directory is left untouched. You can verify the migration
+ * and delete it manually when you're confident.
+ *
+ * Steps:
  *   1. Copy chunk data to ~/context/
  *   2. Copy settings to ~/.basis/
  *   3. Backfill per-chunk summary.txt from day-level index.txt
@@ -14,7 +18,6 @@
  *   8. Compute sessions per day (model-synthesized)
  *   9. Build user profile
  *  10. Write rolling context (context.json)
- *  11. Delete old ~/.context/
  *
  * Usage:
  *   pnpm build && node scripts/migrate/migrate.mjs
@@ -61,6 +64,10 @@ async function copyRecursive(src, dest) {
     if (entry.isDirectory()) {
       await copyRecursive(s, d);
     } else {
+      // Skip if destination file already exists. This preserves enriched
+      // meta.json files from prior runs (migration is idempotent — re-running
+      // it should not clobber new data with the old original).
+      if (fss.existsSync(d)) continue;
       await fs.copyFile(s, d);
     }
   }
@@ -226,7 +233,9 @@ async function discoverChunks() {
         for (const chunk of await safeReaddir(dayDir)) {
           if (!/^\d{2}-\d{2}$/.test(chunk)) continue;
           const chunkDir = path.join(dayDir, chunk);
-          if (!fss.existsSync(path.join(chunkDir, "summary.txt"))) continue;
+          // A chunk is real if it has meta.json. summary.txt may be missing
+          // in old-format data (backfilled by Step 3) or may be absent entirely.
+          if (!fss.existsSync(path.join(chunkDir, "meta.json"))) continue;
 
           const [hh, mm] = chunk.split("-");
           chunks.push({
@@ -391,10 +400,10 @@ async function buildCatalogs(chunks) {
   return catalogs;
 }
 
-// ─── Step 7: Compute sessions ────────────────────────────────────────────────
+// ─── Step 8: Compute sessions ────────────────────────────────────────────────
 
 async function buildSessions(catalogs, aiSettings) {
-  console.log("\n── Step 7: Compute sessions ──\n");
+  console.log("\n── Step 8: Compute sessions ──\n");
 
   const allSessions = [];
 
@@ -416,10 +425,10 @@ async function buildSessions(catalogs, aiSettings) {
   return allSessions;
 }
 
-// ─── Step 8: Build profile ───────────────────────────────────────────────────
+// ─── Step 9: Build profile ───────────────────────────────────────────────────
 
 async function buildProfile(allSessions) {
-  console.log("\n── Step 8: Build user profile ──\n");
+  console.log("\n── Step 9: Build user profile ──\n");
 
   if (DRY_RUN) {
     log("Would build profile from session data");
@@ -438,10 +447,10 @@ async function buildProfile(allSessions) {
   log(`Profile built from ${sorted.length} days of data`);
 }
 
-// ─── Step 9: Rebuild SQLite index ────────────────────────────────────────────
+// ─── Step 7: Rebuild SQLite index ────────────────────────────────────────────
 
 async function buildSearchIndex() {
-  console.log("\n── Step 9: Rebuild SQLite index ──\n");
+  console.log("\n── Step 7: Rebuild SQLite index ──\n");
 
   if (DRY_RUN) {
     log("Would rebuild index.db from all catalogs");
@@ -473,20 +482,6 @@ async function buildContext(allSessions) {
   log(`Context built from ${sorted.length} days → ~/context/context.json`);
 }
 
-// ─── Step 11: Delete old directory ───────────────────────────────────────────
-
-async function deleteOldDir() {
-  console.log("\n── Step 11: Clean up ──\n");
-
-  if (DRY_RUN) {
-    log(`Would delete ${OLD_DIR}`);
-    return;
-  }
-
-  await fs.rm(OLD_DIR, { recursive: true, force: true });
-  log(`Deleted ${OLD_DIR}`);
-}
-
 // ─── Main ────────────────────────────────────────────────────────────────────
 
 async function main() {
@@ -513,7 +508,6 @@ async function main() {
   const allSessions = await buildSessions(catalogs, aiSettings);
   await buildProfile(allSessions);
   await buildContext(allSessions);
-  await deleteOldDir();
 
   console.log("\n  Migration complete.\n");
   log(`Chunks processed: ${chunks.length}`);
@@ -522,6 +516,9 @@ async function main() {
   log(`Index: ~/context/index.db`);
   log(`Context: ~/context/context.json`);
   log(`Profile: ~/.basis/profile.json`);
+  log("");
+  log(`Original ~/.context/ left untouched. Verify the new data, then delete manually:`);
+  log(`  rm -rf ~/.context`);
   console.log("");
 }
 
