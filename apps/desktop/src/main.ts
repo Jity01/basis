@@ -31,8 +31,8 @@ function createWindow(): void {
   const isDev = process.env.VITE_DEV_SERVER_URL != null;
 
   mainWindow = new BrowserWindow({
-    width: 640,
-    height: 480,
+    width: 680,
+    height: 560,
     show: true,
     center: true,
     // Match ui/styles.css --bg so the shell isn’t bright white before React paints.
