@@ -191,62 +191,69 @@ async function processOneChunk(item: BacklogItem, aiSettings?: AISettings): Prom
   const startTimeStr = hhmmss(chunkStart);
   const endTimeStr = hhmmss(chunkEnd);
 
-  const allFrames = await extractFrames(item.filePath, FRAMES_PER_CHUNK);
+  const { framePaths: allFrames, cleanup: cleanupExtractedFrames } = await extractFrames(
+    item.filePath,
+    FRAMES_PER_CHUNK
+  );
 
-  const rawNarrator = await callNarratorVlm(allFrames, aiSettings);
-
-  let keyIx: number[] = [];
   try {
-    keyIx = parseKeyFrames(rawNarrator, allFrames.length);
-  } catch {
-    keyIx = [];
+    const rawNarrator = await callNarratorVlm(allFrames, aiSettings);
+
+    let keyIx: number[] = [];
+    try {
+      keyIx = parseKeyFrames(rawNarrator, allFrames.length);
+    } catch {
+      keyIx = [];
+    }
+    keyIx = normalizeKeyFrames(keyIx, allFrames.length);
+
+    const ocrTexts: string[] = [];
+    for (const srcIdx of keyIx) {
+      const fp = allFrames[srcIdx - 1]!;
+      const txt = await callFormattedOcrVl(fp, aiSettings);
+      ocrTexts.push(txt);
+    }
+
+    const keyFramePaths = keyIx.map((i) => allFrames[i - 1]!);
+    const metadata = await extractChunkMetadata(
+      rawNarrator.trim(),
+      keyFramePaths,
+      startTimeStr,
+      endTimeStr,
+      aiSettings
+    );
+
+    await storeSegmentWikiChunk(
+      chunkStart,
+      rawNarrator,
+      {
+        raw_video_file: path.basename(item.filePath),
+        raw_video_path: item.filePath,
+        chunk_start_iso: chunkStart.toISOString(),
+        chunk_end_iso: chunkEnd.toISOString(),
+        chunk_duration_ms: item.chunkDurationMs,
+        processed_at_iso: new Date().toISOString(),
+        frames_extracted: allFrames.length,
+        frames_stored: ocrTexts.length,
+        input_frame_count: allFrames.length,
+        key_frame_indices_1based: keyIx,
+        pipeline: "segment_wiki",
+        ...metadata,
+      },
+      ocrTexts,
+      keyIx,
+      allFrames.length,
+      CONTEXT_ROOT
+    );
+
+    await appendToCatalog(chunkStart, rawNarrator.trim(), metadata, CONTEXT_ROOT);
+
+    await maybeEnqueueWiki(chunkStart, rawNarrator.trim(), ocrTexts, aiSettings);
+
+    await deleteRawVideo(item.filePath);
+  } finally {
+    await cleanupExtractedFrames();
   }
-  keyIx = normalizeKeyFrames(keyIx, allFrames.length);
-
-  const ocrTexts: string[] = [];
-  for (const srcIdx of keyIx) {
-    const fp = allFrames[srcIdx - 1]!;
-    const txt = await callFormattedOcrVl(fp, aiSettings);
-    ocrTexts.push(txt);
-  }
-
-  const keyFramePaths = keyIx.map((i) => allFrames[i - 1]!);
-  const metadata = await extractChunkMetadata(
-    rawNarrator.trim(),
-    keyFramePaths,
-    startTimeStr,
-    endTimeStr,
-    aiSettings
-  );
-
-  await storeSegmentWikiChunk(
-    chunkStart,
-    rawNarrator,
-    {
-      raw_video_file: path.basename(item.filePath),
-      raw_video_path: item.filePath,
-      chunk_start_iso: chunkStart.toISOString(),
-      chunk_end_iso: chunkEnd.toISOString(),
-      chunk_duration_ms: item.chunkDurationMs,
-      processed_at_iso: new Date().toISOString(),
-      frames_extracted: allFrames.length,
-      frames_stored: ocrTexts.length,
-      input_frame_count: allFrames.length,
-      key_frame_indices_1based: keyIx,
-      pipeline: "segment_wiki",
-      ...metadata,
-    },
-    ocrTexts,
-    keyIx,
-    allFrames.length,
-    CONTEXT_ROOT
-  );
-
-  await appendToCatalog(chunkStart, rawNarrator.trim(), metadata, CONTEXT_ROOT);
-
-  await maybeEnqueueWiki(chunkStart, rawNarrator.trim(), ocrTexts, aiSettings);
-
-  await deleteRawVideo(item.filePath);
 }
 
 async function processChunkWithRetry(

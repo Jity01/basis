@@ -152,7 +152,7 @@ cd apps/desktop && electron .
 ## Milestone 3: Frame Extraction ✅
 
 - **`packages/core/src/frames.ts`**
-  - `extractFrames(videoPath, numFrames, maxDim?)` — uses ffmpeg to sample `numFrames` JPEGs at evenly spaced times (centered in equal duration slices), downscaled so the longest edge ≤ `maxDim` (default **1568**). Writes to **`~/context/.tmp/extracted-frames/`** (overwrites each run; see `EXTRACTED_FRAMES_DIR`) and returns absolute paths in time order.
+  - `extractFrames(videoPath, numFrames, maxDim?)` — uses ffmpeg to sample `numFrames` JPEGs at evenly spaced times (centered in equal duration slices), downscaled so the longest edge ≤ `maxDim` (default **1568**). Writes under **`~/context/.tmp/extract-frames/<uuid>/`** (unique per call; parallel-safe) and returns `{ framePaths, cleanup }`; call **`await cleanup()`** when finished to remove that work directory.
   - `selectRepresentativeFrames(framePaths, keep)` — picks `keep` paths using consecutive **file-size** deltas as a simple change signal; always includes the first and last frame when `keep >= 2`.
 - Requires **ffmpeg** / **ffprobe** (see Requirements): on `PATH` in dev, or `CONTEXT_MANAGER_FFMPEG_BIN` / `CONTEXT_MANAGER_FFPROBE_BIN` when set by the packaged Electron app.
 
@@ -160,7 +160,7 @@ cd apps/desktop && electron .
 
 1. Use any screen-recording chunk from `~/context/.tmp/` (e.g. `.webm`) or another short video (`.mov` / `.mp4`).
 2. From the repo root, build core: `pnpm --filter @context-manager/core build`
-3. Run Node in the repo and call `extractFrames(path, 15, 1568)` from `@context-manager/core` (or a small script that imports `dist/frames.js`).
+3. Run Node in the repo and call `extractFrames(path, 15, 1568)` from `@context-manager/core`, then `await cleanup()` (or a small script that imports `dist/frames.js`).
 4. Confirm 15 JPEGs exist, order matches time order, and `ffprobe` reports `max(width,height) <= 1568` for each.
 5. Call `selectRepresentativeFrames(paths, 5)` and confirm 5 paths, including the first and last of the 15.
 
@@ -174,7 +174,7 @@ cd apps/desktop && electron .
 
 1. For Fireworks mode, set **`FIREWORKS_API_KEY`** in **`.env`**. For local mode, make sure Ollama is running and pick a vision-capable local tagging model in the desktop app settings.
 2. Build core: `pnpm --filter @context-manager/core build`
-3. Run `pnpm --filter @context-manager/core tag-test -- /path/to/recording.webm` or call `extractFrames` then `tagChunk` from code.
+3. Run `pnpm --filter @context-manager/core tag-test -- /path/to/recording.webm` or call `extractFrames` (then `cleanup`) and `tagChunk` from code.
 4. Verify: non-empty summary text that references real on-screen content.
 
 **Deterministic MCP browse helper smoke test:**

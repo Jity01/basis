@@ -1,5 +1,7 @@
 import { execFile } from "child_process";
+import { randomUUID } from "crypto";
 import * as fs from "fs";
+import * as fsPromises from "fs/promises";
 import * as path from "path";
 import { promisify } from "util";
 import { CONTEXT_ROOT } from "@context-manager/config";
@@ -16,12 +18,20 @@ function ffprobeBin(): string {
   return process.env.CONTEXT_MANAGER_FFPROBE_BIN?.trim() || "ffprobe";
 }
 
-/** Latest `extractFrames` output: `~/context/.tmp/extracted-frames/` (overwritten each run). */
-export const EXTRACTED_FRAMES_DIR = path.join(
-  CONTEXT_ROOT,
-  ".tmp",
-  "extracted-frames"
-);
+/**
+ * Parent directory for per-run `extractFrames` work dirs (`…/extract-frames/<uuid>/`).
+ * Each invocation uses its own subdirectory so parallel chunk pipelines do not clobber JPEGs.
+ */
+export const EXTRACT_FRAMES_PARENT_DIR = path.join(CONTEXT_ROOT, ".tmp", "extract-frames");
+
+/** @deprecated Use {@link EXTRACT_FRAMES_PARENT_DIR}. */
+export const EXTRACTED_FRAMES_DIR = EXTRACT_FRAMES_PARENT_DIR;
+
+export type ExtractFramesResult = {
+  framePaths: string[];
+  /** Removes this extraction’s work directory; safe to call multiple times. */
+  cleanup: () => Promise<void>;
+};
 
 function parseFfprobeDurationSeconds(stdout: string): number | null {
   const t = String(stdout).trim();
@@ -202,15 +212,20 @@ async function runFfmpegFrameAt(
  * Extract evenly spaced JPEG frames from a video using ffmpeg.
  * Frames are centered in `numFrames` equal time slices across the duration.
  * Downscales so the longest edge is at most `maxDim` (default 1568).
- * Writes JPEGs to {@link EXTRACTED_FRAMES_DIR} (replaces previous run); returns absolute paths in time order.
+ * Writes JPEGs under {@link EXTRACT_FRAMES_PARENT_DIR}/&lt;uuid&gt;/ (unique per call). Call `cleanup()` when done.
  */
 export async function extractFrames(
   videoPath: string,
   numFrames: number,
   maxDim: number = DEFAULT_MAX_DIM
-): Promise<string[]> {
+): Promise<ExtractFramesResult> {
   if (numFrames <= 0) {
-    return [];
+    return {
+      framePaths: [],
+      cleanup: async () => {
+        /* noop */
+      },
+    };
   }
   if (!fs.existsSync(videoPath)) {
     throw new Error(`Video not found: ${videoPath}`);
@@ -226,24 +241,34 @@ export async function extractFrames(
     throw new Error(`Invalid or zero duration for: ${videoPath}`);
   }
 
-  const outDir = EXTRACTED_FRAMES_DIR;
-  fs.rmSync(outDir, { recursive: true, force: true });
-  fs.mkdirSync(outDir, { recursive: true });
+  const workDir = path.join(EXTRACT_FRAMES_PARENT_DIR, randomUUID());
+  fs.mkdirSync(workDir, { recursive: true });
   const paths: string[] = [];
 
-  for (let i = 0; i < numFrames; i++) {
-    const t = ((i + 0.5) / numFrames) * duration;
-    const name = `frame_${String(i).padStart(3, "0")}.jpg`;
-    const outPath = path.join(outDir, name);
-    try {
-      await runFfmpegFrameAt(videoPath, t, outPath, maxDim);
-    } catch (e) {
-      throw wrapFfmpegError(e);
+  try {
+    for (let i = 0; i < numFrames; i++) {
+      const t = ((i + 0.5) / numFrames) * duration;
+      const name = `frame_${String(i).padStart(3, "0")}.jpg`;
+      const outPath = path.join(workDir, name);
+      try {
+        await runFfmpegFrameAt(videoPath, t, outPath, maxDim);
+      } catch (e) {
+        throw wrapFfmpegError(e);
+      }
+      paths.push(outPath);
     }
-    paths.push(outPath);
+  } catch (e) {
+    await fsPromises.rm(workDir, { recursive: true, force: true }).catch(() => {
+      /* ignore */
+    });
+    throw e;
   }
 
-  return paths;
+  const cleanup = async (): Promise<void> => {
+    await fsPromises.rm(workDir, { recursive: true, force: true });
+  };
+
+  return { framePaths: paths, cleanup };
 }
 
 /**
