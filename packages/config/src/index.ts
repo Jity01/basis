@@ -32,3 +32,17 @@ export function hotBufferDir(contextRoot: string = CONTEXT_ROOT): string {
   return path.join(contextRoot, ".hotbuffer");
 }
 
+/** Flat wiki root under context (`~/context/.wiki/`). */
+export const WIKI_DIR_NAME = ".wiki";
+export const OCR_DIR_NAME = "ocr";
+export const TEMPORAL_DESCRIPTION_FILE_NAME = "temporal_description.txt";
+export const TEMPORAL_INDEX_FILE_NAME = "temporal_index.json";
+
+/** Fireworks chat model for wiki JSON ops (text-only). Override with `FIREWORKS_WIKI_MODEL`. */
+export const DEFAULT_WIKI_TEXT_MODEL =
+  process.env.FIREWORKS_WIKI_MODEL?.trim() || "accounts/fireworks/models/qwen3p6-plus";
+
+export function wikiRootPath(contextRoot: string = CONTEXT_ROOT): string {
+  return path.join(contextRoot, WIKI_DIR_NAME);
+}
+

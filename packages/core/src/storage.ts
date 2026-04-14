@@ -1,71 +1,30 @@
 import * as fs from "fs/promises";
 import * as path from "path";
-import { CONTEXT_ROOT } from "@context-manager/config";
+import {
+  CONTEXT_ROOT,
+  OCR_DIR_NAME,
+  TEMPORAL_DESCRIPTION_FILE_NAME,
+  TEMPORAL_INDEX_FILE_NAME,
+} from "@context-manager/config";
 import type { CatalogEntry, DayCatalog, ChunkMetadata } from "@context-manager/config";
 
-const FRAMES_DIR_NAME = "frames";
 const META_FILE_NAME = "meta.json";
-/** Per-chunk summary; day rollup is assembled at read time in searcher (no `index.txt`). */
+
+/** Legacy per-chunk summary filename (older chunks only). */
 export const SUMMARY_FILE_NAME = "summary.txt";
-const REQUIRED_REPRESENTATIVE_FRAMES = 5;
+export { OCR_DIR_NAME, TEMPORAL_DESCRIPTION_FILE_NAME, TEMPORAL_INDEX_FILE_NAME };
 
 function pad2(n: number): string {
   return String(n).padStart(2, "0");
 }
 
-function chunkDirFromTimestamp(timestamp: Date): string {
+function chunkDirFromTimestamp(timestamp: Date, contextRoot: string = CONTEXT_ROOT): string {
   const yyyy = String(timestamp.getFullYear());
   const mm = pad2(timestamp.getMonth() + 1);
   const dd = pad2(timestamp.getDate());
   const hh = pad2(timestamp.getHours());
   const min = pad2(timestamp.getMinutes());
-  return path.join(CONTEXT_ROOT, yyyy, mm, dd, `${hh}-${min}`);
-}
-
-/** Write one processed chunk to `~/context/YYYY/MM/DD/HH-MM/`. */
-export async function storeChunk(
-  timestamp: Date,
-  summary: string,
-  meta: object,
-  framePaths: string[]
-): Promise<string> {
-  if (framePaths.length < REQUIRED_REPRESENTATIVE_FRAMES) {
-    console.warn(`storeChunk: requires at least ${REQUIRED_REPRESENTATIVE_FRAMES} frame paths, got ${framePaths.length}.`);
-  }
-
-  const chunkDir = chunkDirFromTimestamp(timestamp);
-  const framesDir = path.join(chunkDir, FRAMES_DIR_NAME);
-
-  await fs.mkdir(framesDir, { recursive: true });
-  await fs.writeFile(
-    path.join(chunkDir, SUMMARY_FILE_NAME),
-    `${summary.trim()}\n`,
-    "utf8"
-  );
-  await fs.writeFile(
-    path.join(chunkDir, META_FILE_NAME),
-    `${JSON.stringify(meta, null, 2)}\n`,
-    "utf8"
-  );
-
-  for (let i = 0; i < Math.min(framePaths.length, REQUIRED_REPRESENTATIVE_FRAMES); i++) {
-    const src = framePaths[i]!;
-    const frameName = `${String(i + 1).padStart(3, "0")}.jpg`;
-    const dest = path.join(framesDir, frameName);
-    await fs.copyFile(src, dest);
-  }
-
-  return chunkDir;
-}
-
-const CATALOG_FILE_NAME = "catalog.json";
-export { CATALOG_FILE_NAME };
-
-function dayDirFromTimestamp(timestamp: Date): string {
-  const yyyy = String(timestamp.getFullYear());
-  const mm = pad2(timestamp.getMonth() + 1);
-  const dd = pad2(timestamp.getDate());
-  return path.join(CONTEXT_ROOT, yyyy, mm, dd);
+  return path.join(contextRoot, yyyy, mm, dd, `${hh}-${min}`);
 }
 
 function formatDate(timestamp: Date): string {
@@ -73,6 +32,80 @@ function formatDate(timestamp: Date): string {
   const mm = pad2(timestamp.getMonth() + 1);
   const dd = pad2(timestamp.getDate());
   return `${yyyy}-${mm}-${dd}`;
+}
+
+function chunkSlugFromTimestamp(timestamp: Date): string {
+  return `${pad2(timestamp.getHours())}-${pad2(timestamp.getMinutes())}`;
+}
+
+/**
+ * Write one segment-wiki chunk: `temporal_description.txt`, `ocr/*.txt`, `temporal_index.json`, `meta.json`.
+ */
+export async function storeSegmentWikiChunk(
+  timestamp: Date,
+  temporalDescription: string,
+  meta: Record<string, unknown>,
+  ocrTexts: string[],
+  keySourceIndices1Based: number[],
+  inputFrameCount: number,
+  contextRoot: string = CONTEXT_ROOT
+): Promise<string> {
+  const chunkDir = chunkDirFromTimestamp(timestamp, contextRoot);
+  const ocrDir = path.join(chunkDir, OCR_DIR_NAME);
+  const chunkSlug = chunkSlugFromTimestamp(timestamp);
+
+  await fs.mkdir(ocrDir, { recursive: true });
+
+  await fs.writeFile(
+    path.join(chunkDir, TEMPORAL_DESCRIPTION_FILE_NAME),
+    `${temporalDescription.trim()}\n`,
+    "utf8"
+  );
+
+  for (let i = 0; i < ocrTexts.length; i++) {
+    const fname = `${String(i + 1).padStart(3, "0")}.txt`;
+    await fs.writeFile(path.join(ocrDir, fname), `${(ocrTexts[i] ?? "").trim()}\n`, "utf8");
+  }
+
+  const temporalIndexDoc = {
+    schema_version: 1,
+    date: formatDate(timestamp),
+    chunk_dir: chunkSlug,
+    input_frame_count: inputFrameCount,
+    key_frame_source_indices_1based: keySourceIndices1Based,
+    temporal_description_path: path.join(chunkDir, TEMPORAL_DESCRIPTION_FILE_NAME),
+    mappings: ocrTexts.map((_, wi) => ({
+      wiki_frame_index_1based: wi + 1,
+      source_input_frame_index_1based: keySourceIndices1Based[wi] ?? wi + 1,
+      text_file: `${String(wi + 1).padStart(3, "0")}.txt`,
+    })),
+    note:
+      "OCR text files correspond to key frames; source_input_frame_index_1based refers to narrator input frames.",
+  };
+
+  await fs.writeFile(
+    path.join(chunkDir, TEMPORAL_INDEX_FILE_NAME),
+    `${JSON.stringify(temporalIndexDoc, null, 2)}\n`,
+    "utf8"
+  );
+
+  await fs.writeFile(
+    path.join(chunkDir, META_FILE_NAME),
+    `${JSON.stringify(meta, null, 2)}\n`,
+    "utf8"
+  );
+
+  return chunkDir;
+}
+
+const CATALOG_FILE_NAME = "catalog.json";
+export { CATALOG_FILE_NAME };
+
+function dayDirFromTimestamp(timestamp: Date, contextRoot: string): string {
+  const yyyy = String(timestamp.getFullYear());
+  const mm = pad2(timestamp.getMonth() + 1);
+  const dd = pad2(timestamp.getDate());
+  return path.join(contextRoot, yyyy, mm, dd);
 }
 
 function formatTime(timestamp: Date): string {
@@ -87,9 +120,10 @@ function formatChunkKey(timestamp: Date): string {
 export async function appendToCatalog(
   timestamp: Date,
   summary: string,
-  meta: ChunkMetadata
+  meta: ChunkMetadata,
+  contextRoot: string = CONTEXT_ROOT
 ): Promise<void> {
-  const dayDir = dayDirFromTimestamp(timestamp);
+  const dayDir = dayDirFromTimestamp(timestamp, contextRoot);
   const catalogPath = path.join(dayDir, CATALOG_FILE_NAME);
 
   let catalog: DayCatalog;
@@ -106,7 +140,6 @@ export async function appendToCatalog(
   const chunkKey = formatChunkKey(timestamp);
   const time = formatTime(timestamp);
 
-  // Remove existing entry for this chunk (in case of reprocessing)
   catalog.chunks = catalog.chunks.filter((c) => c.chunk_key !== chunkKey);
 
   const entry: CatalogEntry = {
@@ -141,9 +174,7 @@ export async function moveRawVideoToFailed(videoPath: string, err: unknown): Pro
     resolvedVideoPath !== tmpDir &&
     !resolvedVideoPath.startsWith(`${tmpDir}${path.sep}`)
   ) {
-    throw new Error(
-      `Refusing to move file outside ${tmpDir}: ${resolvedVideoPath}`
-    );
+    throw new Error(`Refusing to move file outside ${tmpDir}: ${resolvedVideoPath}`);
   }
 
   await fs.mkdir(failedRoot, { recursive: true });
@@ -185,9 +216,7 @@ export async function deleteRawVideo(videoPath: string): Promise<void> {
     resolvedVideoPath !== tmpDir &&
     !resolvedVideoPath.startsWith(`${tmpDir}${path.sep}`)
   ) {
-    throw new Error(
-      `Refusing to delete file outside ${tmpDir}: ${resolvedVideoPath}`
-    );
+    throw new Error(`Refusing to delete file outside ${tmpDir}: ${resolvedVideoPath}`);
   }
 
   try {

@@ -3,20 +3,37 @@ import * as path from "path";
 import {
   CONTEXT_ROOT,
   FRAMES_PER_CHUNK,
-  FRAMES_TO_KEEP,
   MAX_RETRIES,
   PIPELINE_CONCURRENCY,
   RETRY_DELAY_MS,
+  wikiRootPath,
 } from "@context-manager/config";
 import type { AISettings, ProcessBacklogProgress, ProcessBacklogOptions } from "@context-manager/config";
-import { extractFrames, selectRepresentativeFrames } from "./frames";
+import { extractFrames } from "./frames";
 import { readChunkDurationMsForFile } from "./recorder";
-import { deleteRawVideo, moveRawVideoToFailed, storeChunk, appendToCatalog, CATALOG_FILE_NAME } from "./storage";
-import { tagChunk, extractChunkMetadata } from "./tagger";
+import {
+  deleteRawVideo,
+  moveRawVideoToFailed,
+  storeSegmentWikiChunk,
+  appendToCatalog,
+  CATALOG_FILE_NAME,
+} from "./storage";
+import { extractChunkMetadata } from "./tagger";
 import { computeSessions } from "./sessions";
 import { updateProfile } from "./profile";
 import { openIndex, indexChunk } from "./indexer";
 import { updateContext } from "./context";
+import {
+  callNarratorVlm,
+  parseKeyFrames,
+  normalizeKeyFrames,
+  callFormattedOcrVl,
+  formatFramesForPromptTemporal,
+  callWikiTextModel,
+  parseWikiResponse,
+} from "./segmentWiki";
+import { readWikiStateFlat } from "./wikiApply";
+import { enqueueWikiOps, drainWikiQueue } from "./wikiQueue";
 
 export type { ProcessBacklogProgress, ProcessBacklogOptions } from "@context-manager/config";
 
@@ -39,6 +56,24 @@ function sleep(ms: number): Promise<void> {
 
 function hhmmss(d: Date): string {
   return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+}
+
+function chunkKeyFromDate(chunkStart: Date): string {
+  const y = chunkStart.getFullYear();
+  const m = pad2(chunkStart.getMonth() + 1);
+  const d = pad2(chunkStart.getDate());
+  const hh = pad2(chunkStart.getHours());
+  const mm = pad2(chunkStart.getMinutes());
+  return `${y}-${m}-${d}/${hh}-${mm}`;
+}
+
+function chunkTimestampLabel(chunkStart: Date): string {
+  const y = chunkStart.getFullYear();
+  const m = pad2(chunkStart.getMonth() + 1);
+  const d = pad2(chunkStart.getDate());
+  const hh = pad2(chunkStart.getHours());
+  const mm = pad2(chunkStart.getMinutes());
+  return `${y}-${m}-${d} ${hh}:${mm}`;
 }
 
 /**
@@ -113,10 +148,43 @@ async function getBacklogFiles(currentFile: string | null): Promise<BacklogItem[
   return backlog;
 }
 
-async function processOneChunk(
-  item: BacklogItem,
+async function maybeEnqueueWiki(
+  chunkStart: Date,
+  temporalDescription: string,
+  ocrTexts: string[],
   aiSettings?: AISettings
 ): Promise<void> {
+  if (aiSettings?.provider === "local") {
+    return;
+  }
+  try {
+    const wikiDir = wikiRootPath(CONTEXT_ROOT);
+    const wikiState = await readWikiStateFlat(wikiDir);
+    const framesText = formatFramesForPromptTemporal({
+      timestamp: chunkTimestampLabel(chunkStart),
+      app: "Recorder",
+      window: "Screen chunk",
+      temporal_description: temporalDescription,
+      ocr_texts: ocrTexts,
+    });
+    const raw = await callWikiTextModel(wikiState, framesText, aiSettings);
+    const { operations } = parseWikiResponse(raw);
+    if (!operations.length) {
+      return;
+    }
+    await enqueueWikiOps(CONTEXT_ROOT, {
+      chunkStartMs: chunkStart.getTime(),
+      chunkKey: chunkKeyFromDate(chunkStart),
+      operations,
+      enqueuedAt: new Date().toISOString(),
+    });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`[pipeline] wiki LLM enqueue skipped: ${msg}`);
+  }
+}
+
+async function processOneChunk(item: BacklogItem, aiSettings?: AISettings): Promise<void> {
   const chunkStart = item.chunkStart;
   const chunkEnd = new Date(chunkStart.getTime() + item.chunkDurationMs);
 
@@ -125,23 +193,35 @@ async function processOneChunk(
 
   const allFrames = await extractFrames(item.filePath, FRAMES_PER_CHUNK);
 
-  // Pass 1: prose summary (unchanged from original)
-  const summary = await tagChunk(allFrames, startTimeStr, endTimeStr, aiSettings);
+  const rawNarrator = await callNarratorVlm(allFrames, aiSettings);
 
-  // Pass 2: structured metadata extraction
+  let keyIx: number[] = [];
+  try {
+    keyIx = parseKeyFrames(rawNarrator, allFrames.length);
+  } catch {
+    keyIx = [];
+  }
+  keyIx = normalizeKeyFrames(keyIx, allFrames.length);
+
+  const ocrTexts: string[] = [];
+  for (const srcIdx of keyIx) {
+    const fp = allFrames[srcIdx - 1]!;
+    const txt = await callFormattedOcrVl(fp, aiSettings);
+    ocrTexts.push(txt);
+  }
+
+  const keyFramePaths = keyIx.map((i) => allFrames[i - 1]!);
   const metadata = await extractChunkMetadata(
-    summary,
-    allFrames,
+    rawNarrator.trim(),
+    keyFramePaths,
     startTimeStr,
     endTimeStr,
     aiSettings
   );
 
-  const representativeFrames = selectRepresentativeFrames(allFrames, FRAMES_TO_KEEP);
-
-  await storeChunk(
+  await storeSegmentWikiChunk(
     chunkStart,
-    summary,
+    rawNarrator,
     {
       raw_video_file: path.basename(item.filePath),
       raw_video_path: item.filePath,
@@ -150,13 +230,22 @@ async function processOneChunk(
       chunk_duration_ms: item.chunkDurationMs,
       processed_at_iso: new Date().toISOString(),
       frames_extracted: allFrames.length,
-      frames_stored: representativeFrames.length,
+      frames_stored: ocrTexts.length,
+      input_frame_count: allFrames.length,
+      key_frame_indices_1based: keyIx,
+      pipeline: "segment_wiki",
       ...metadata,
     },
-    representativeFrames
+    ocrTexts,
+    keyIx,
+    allFrames.length,
+    CONTEXT_ROOT
   );
 
-  await appendToCatalog(chunkStart, summary, metadata);
+  await appendToCatalog(chunkStart, rawNarrator.trim(), metadata, CONTEXT_ROOT);
+
+  await maybeEnqueueWiki(chunkStart, rawNarrator.trim(), ocrTexts, aiSettings);
+
   await deleteRawVideo(item.filePath);
 }
 
@@ -236,9 +325,13 @@ export async function processBacklog(
         }
       })
     );
+
+    await drainWikiQueue(CONTEXT_ROOT);
   }
 
   options.onProgress?.({ phase: "done", total, completed });
+
+  await drainWikiQueue(CONTEXT_ROOT);
 
   // Post-processing: compute sessions for affected days
   if (completed > 0) {
@@ -255,7 +348,6 @@ export async function processBacklog(
         const raw = await fs.readFile(catalogPath, "utf8");
         const catalog = JSON.parse(raw) as import("@context-manager/config").DayCatalog;
         if (Array.isArray(catalog.chunks) && catalog.chunks.length > 0) {
-          // Index chunks in SQLite
           const db = openIndex(CONTEXT_ROOT);
           try {
             for (const chunk of catalog.chunks) {
@@ -265,7 +357,6 @@ export async function processBacklog(
             db.close();
           }
 
-          // Compute sessions and update context
           const daySessions = await computeSessions(catalog, CONTEXT_ROOT, options.aiSettings);
           await updateProfile(daySessions);
           await updateContext(daySessions, CONTEXT_ROOT);

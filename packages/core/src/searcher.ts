@@ -2,13 +2,26 @@ import * as fs from "fs/promises";
 import * as path from "path";
 import { CONTEXT_ROOT } from "@context-manager/config";
 import type { DaySummary, DayIndex, ChunkFrame, ChunkContext, DayCatalog } from "@context-manager/config";
-import { SUMMARY_FILE_NAME, CATALOG_FILE_NAME } from "./storage";
+import {
+  SUMMARY_FILE_NAME,
+  CATALOG_FILE_NAME,
+  TEMPORAL_DESCRIPTION_FILE_NAME,
+  OCR_DIR_NAME,
+} from "./storage";
 
 export type { DaySummary, DayIndex, ChunkFrame, ChunkContext, DayCatalog } from "@context-manager/config";
 
 const DEFAULT_LIST_DAYS_LIMIT = 30;
 const META_FILE_NAME = "meta.json";
 const FRAMES_DIR_NAME = "frames";
+
+async function readChunkNarrativeText(chunkDir: string): Promise<string> {
+  const temporal = (await readTextFileSafe(path.join(chunkDir, TEMPORAL_DESCRIPTION_FILE_NAME))).trim();
+  if (temporal) {
+    return temporal;
+  }
+  return (await readTextFileSafe(path.join(chunkDir, SUMMARY_FILE_NAME))).trim();
+}
 const DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 const CHUNK_DIR_RE = /^(\d{2})-(\d{2})$/;
 const CHUNK_KEY_RE = /^(\d{4})-(\d{2})-(\d{2})\/(\d{2})-(\d{2})$/;
@@ -135,7 +148,7 @@ async function readDaySummary(date: string, contextRoot: string): Promise<DaySum
   const chunkDirNames = await listChunkDirNames(dayDir);
   const timesWithSummary: string[] = [];
   for (const name of chunkDirNames) {
-    const text = (await readTextFileSafe(path.join(dayDir, name, SUMMARY_FILE_NAME))).trim();
+    const text = (await readChunkNarrativeText(path.join(dayDir, name))).trim();
     if (!text) {
       continue;
     }
@@ -190,7 +203,7 @@ async function buildDayIndexTextFromDisk(dayDir: string): Promise<string> {
   const chunkDirNames = await listChunkDirNames(dayDir);
   const parts: string[] = [];
   for (const name of chunkDirNames) {
-    const text = (await readTextFileSafe(path.join(dayDir, name, SUMMARY_FILE_NAME))).trim();
+    const text = (await readChunkNarrativeText(path.join(dayDir, name))).trim();
     if (!text) {
       continue;
     }
@@ -212,7 +225,7 @@ export async function getDayIndex(
   const chunkDirNames = await listChunkDirNames(dayDir);
   const chunkKeys: string[] = [];
   for (const name of chunkDirNames) {
-    const text = (await readTextFileSafe(path.join(dayDir, name, SUMMARY_FILE_NAME))).trim();
+    const text = (await readChunkNarrativeText(path.join(dayDir, name))).trim();
     if (!text) {
       continue;
     }
@@ -261,16 +274,34 @@ export async function getChunkContext(
   const time = `${parsed.hour}:${parsed.minute}`;
   const chunkDir = chunkPathFromKey(normalizedChunkKey, contextRoot);
 
-  const [summaryRaw, metaText] = await Promise.all([
-    readTextFileSafe(path.join(chunkDir, SUMMARY_FILE_NAME)),
+  const [narrativeRaw, metaText] = await Promise.all([
+    readChunkNarrativeText(chunkDir),
     readTextFileSafe(path.join(chunkDir, META_FILE_NAME)),
   ]);
 
-  const summaryText = summaryRaw.trim() || "(missing summary.txt)";
+  const summaryText =
+    narrativeRaw.trim() || "(missing temporal_description.txt or summary.txt)";
 
   let meta: Record<string, unknown> | null = null;
   if (metaText.trim()) {
     meta = JSON.parse(metaText) as Record<string, unknown>;
+  }
+
+  const ocrDir = path.join(chunkDir, OCR_DIR_NAME);
+  const ocrEntries = await readDirSafe(ocrDir);
+  const ocrFiles = ocrEntries
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".txt"))
+    .map((entry) => path.join(ocrDir, entry.name))
+    .sort((a, b) => a.localeCompare(b));
+
+  let ocrTexts: { name: string; text: string }[] | undefined;
+  if (ocrFiles.length > 0) {
+    ocrTexts = await Promise.all(
+      ocrFiles.map(async (p) => ({
+        name: path.basename(p),
+        text: (await readTextFileSafe(p)).trim(),
+      }))
+    );
   }
 
   const frameEntries = await readDirSafe(path.join(chunkDir, FRAMES_DIR_NAME));
@@ -298,5 +329,6 @@ export async function getChunkContext(
     summaryText,
     meta,
     frames,
+    ...(ocrTexts && ocrTexts.length > 0 ? { ocrTexts } : {}),
   };
 }

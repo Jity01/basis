@@ -229,6 +229,8 @@ export type ChunkContext = {
   summaryText: string;
   meta: Record<string, unknown> | null;
   frames: ChunkFrame[];
+  /** Segment-wiki chunks: formatted OCR text per slot (`001.txt` …) when frames are not stored. */
+  ocrTexts?: { name: string; text: string }[];
 };
 
 // ── Approvals ────────────────────────────────────────────────────────────────

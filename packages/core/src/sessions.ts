@@ -9,7 +9,7 @@ import type {
   DaySessions,
   ActivityType,
 } from "@context-manager/config";
-import { SUMMARY_FILE_NAME } from "./storage";
+import { SUMMARY_FILE_NAME, TEMPORAL_DESCRIPTION_FILE_NAME } from "./storage";
 
 const SESSIONS_FILE_NAME = "sessions.json";
 export { SESSIONS_FILE_NAME };
@@ -121,7 +121,15 @@ async function readChunkSummaries(
     const [yyyy, mm, dd] = datePart.split("-");
     const chunkDir = path.join(contextRoot, yyyy!, mm!, dd!, timePart);
     try {
-      const text = (await fs.readFile(path.join(chunkDir, SUMMARY_FILE_NAME), "utf8")).trim();
+      let text = "";
+      try {
+        text = (await fs.readFile(path.join(chunkDir, TEMPORAL_DESCRIPTION_FILE_NAME), "utf8")).trim();
+      } catch {
+        /* use legacy */
+      }
+      if (!text) {
+        text = (await fs.readFile(path.join(chunkDir, SUMMARY_FILE_NAME), "utf8")).trim();
+      }
       if (text) {
         parts.push(`[${timePart.replace("-", ":")}] ${text}`);
       }
