@@ -1,0 +1,11 @@
+Input:  /Users/yeabkal/Startup/clip_frames/clip7
+Prompt: /Users/yeabkal/Startup/basis/packages/core/tests/prompts/vlm1-activity.txt
+Model:  accounts/fireworks/models/qwen3-vl-30b-a3b-instruct
+Frames: 15
+Extract: 0.0s
+VLM:     28.0s
+
+────────────────────────────────────────────────────────────────────────
+The user is engaged in a deep research session within an AI-powered development tool. They start by reviewing a detailed document on "Screen recording storage and searchability optimization," which outlines concepts like "Deltas" and "Content blobs." The user then navigates to the "Cowork" tab, where they type a complex query into a text box, asking the AI to use their Twitter bookmarks to research a specific architectural question about a "codebook" and its hierarchy. After the AI generates a response, the user returns to the "Chat" tab, where they review the generated text, which includes a summary of the research findings and a proposed two-layer architecture. The user then switches back to the "Cowork" tab and continues to refine their query, asking the AI to research the context window management for search features. The user's goal is to leverage the AI's capabilities to conduct thorough research on a complex software architecture problem.
+
+KEY_FRAMES: [1, 6, 11, 12, 15]

@@ -1,0 +1,25 @@
+Input:  /Users/yeabkal/Startup/clip_frames/clip7
+Prompt: /Users/yeabkal/Startup/basis/packages/core/tests/prompts/vlm1-activity.txt
+Model:  accounts/fireworks/models/qwen3-vl-30b-a3b-instruct
+Frames: 15
+Extract: 0.0s
+VLM:     20.2s
+
+────────────────────────────────────────────────────────────────────────
+1. User clicks on the 'Chat' tab in the top navigation bar.
+2. User types a detailed request into the input box: "can you do a bit of deep research on this 'The codebook has hierarchy potential. 'VS Code' contains 'file tree', 'editor pane', 'terminal'. A moment might reference the top-level 'vscode' but delta against the 'editor pane' specifically. Is the codebook flat or nested? Nested gets you better compression but more fragile references.'"
+3. User switches to the 'Cowork' tab in the top navigation bar.
+4. User clicks on the 'New task' button in the left sidebar.
+5. User types "can you use my twitter bookmarks to research this" into the input field.
+6. User adds more text to the prompt: "can you use my twitter bookmarks to research this 'can you do a bit of deep research on this 'The codebook has hierarchy potential. 'VS Code' contains 'file tree', 'editor pane', 'terminal'. A moment might reference the top-level 'vscode' but delta against the 'editor pane' specifically. Is the codebook flat or nested? Nested gets you better compression but more fragile references.''"
+7. User clicks the 'Let's go' button to submit the research request.
+8. User switches back to the 'Chat' tab.
+9. User scrolls down the chat history to review the conversation.
+10. User clicks the 'Chat' tab again.
+11. User selects the entire text block in the chat history.
+12. User copies the selected text.
+13. User switches to the 'Cowork' tab.
+14. User pastes the copied text into the input box.
+15. User clicks the 'Let's go' button to submit the new prompt.
+
+KEY_FRAMES: [1, 11, 12, 14, 15]

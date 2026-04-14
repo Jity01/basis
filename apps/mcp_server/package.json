@@ -9,9 +9,11 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "start": "node dist/server.js"
+    "start": "node dist/server.js",
+    "search-eval": "node ./tests/run-search-eval.mjs"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
     "@context-manager/config": "workspace:*",
     "@context-manager/core": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.29.0",

@@ -6,8 +6,6 @@ import {
   TEMPORAL_DESCRIPTION_FILE_NAME,
   TEMPORAL_INDEX_FILE_NAME,
 } from "@context-manager/config";
-import type { CatalogEntry, DayCatalog, ChunkMetadata } from "@context-manager/config";
-
 const META_FILE_NAME = "meta.json";
 
 /** Legacy per-chunk summary filename (older chunks only). */
@@ -96,69 +94,6 @@ export async function storeSegmentWikiChunk(
   );
 
   return chunkDir;
-}
-
-const CATALOG_FILE_NAME = "catalog.json";
-export { CATALOG_FILE_NAME };
-
-function dayDirFromTimestamp(timestamp: Date, contextRoot: string): string {
-  const yyyy = String(timestamp.getFullYear());
-  const mm = pad2(timestamp.getMonth() + 1);
-  const dd = pad2(timestamp.getDate());
-  return path.join(contextRoot, yyyy, mm, dd);
-}
-
-function formatTime(timestamp: Date): string {
-  return `${pad2(timestamp.getHours())}:${pad2(timestamp.getMinutes())}`;
-}
-
-function formatChunkKey(timestamp: Date): string {
-  return `${formatDate(timestamp)}/${pad2(timestamp.getHours())}-${pad2(timestamp.getMinutes())}`;
-}
-
-/** Append a chunk entry to the day's catalog.json. Creates the file if it doesn't exist. */
-export async function appendToCatalog(
-  timestamp: Date,
-  summary: string,
-  meta: ChunkMetadata,
-  contextRoot: string = CONTEXT_ROOT
-): Promise<void> {
-  const dayDir = dayDirFromTimestamp(timestamp, contextRoot);
-  const catalogPath = path.join(dayDir, CATALOG_FILE_NAME);
-
-  let catalog: DayCatalog;
-  try {
-    const raw = await fs.readFile(catalogPath, "utf8");
-    catalog = JSON.parse(raw) as DayCatalog;
-    if (!Array.isArray(catalog.chunks)) {
-      catalog.chunks = [];
-    }
-  } catch {
-    catalog = { date: formatDate(timestamp), chunks: [] };
-  }
-
-  const chunkKey = formatChunkKey(timestamp);
-  const time = formatTime(timestamp);
-
-  catalog.chunks = catalog.chunks.filter((c) => c.chunk_key !== chunkKey);
-
-  const entry: CatalogEntry = {
-    time,
-    chunk_key: chunkKey,
-    primary_intent: meta.primary_intent,
-    activities: meta.activities.map((a) => `${a.type}:${a.topics.join(":")}`),
-    apps: meta.apps.map((a) => a.name),
-    topics: Array.from(new Set(meta.activities.flatMap((a) => a.topics))),
-    entities: meta.entities,
-    context_switches: meta.context_switches,
-    summary_preview: summary.length > 200 ? `${summary.slice(0, 200)}...` : summary,
-  };
-
-  catalog.chunks.push(entry);
-  catalog.chunks.sort((a, b) => a.time.localeCompare(b.time));
-
-  await fs.mkdir(dayDir, { recursive: true });
-  await fs.writeFile(catalogPath, `${JSON.stringify(catalog, null, 2)}\n`, "utf8");
 }
 
 const FAILED_DIR_NAME = ".failed";

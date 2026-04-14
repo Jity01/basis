@@ -390,7 +390,7 @@ export async function callWikiTextModel(
       { role: "system", content: system },
       { role: "user", content: userMessage },
     ],
-    max_tokens: 8192,
+    max_tokens: 4096,
     temperature: 0.2,
   };
 
@@ -409,7 +409,8 @@ export async function callWikiTextModel(
   }
 
   const json = (await response.json()) as {
-    choices?: Array<{ message?: { content?: string | null } }>;
+    choices?: Array<{ message?: { content?: string | null; reasoning_content?: string | null } }>;
   };
-  return json.choices?.[0]?.message?.content?.trim() ?? "";
+  const msg = json.choices?.[0]?.message;
+  return (msg?.content ?? msg?.reasoning_content ?? "").trim();
 }

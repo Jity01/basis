@@ -1,0 +1,39 @@
+Input:  /Users/yeabkal/Startup/clip_frames/clip7
+Prompt: /Users/yeabkal/Startup/basis/packages/core/tests/prompts/vlm1-activity.txt
+Model:  accounts/fireworks/models/qwen3-vl-30b-a3b-instruct
+Frames: 15
+Extract: 0.0s
+VLM:     23.6s
+
+────────────────────────────────────────────────────────────────────────
+1. The user is in a chat interface with the topic "Screen recording storage and searchability optimization". The user is reviewing a detailed document about a "producer model" and "codebook" architecture, which includes sections on "Deltas", "Content blobs", and "Relationships I'm less sure about". The user's cursor is positioned at the end of the text "My instinct says 4, but what's yours? Because this choice cascades into everything else — storage volume, producer model cost, index granularity.".
+
+2. The user clicks the "Chat" tab, which is already selected, to initiate a new query. The cursor is at the end of the paragraph about the hybrid model.
+
+3. The user types a new query into the input field: "can you do a bit of deep research on this 'The codebook has hierarchy potential. 'VS Code' contains 'file tree', 'editor pane', 'terminal'. A moment might reference the top-level 'vscode' but delta against the 'editor pane' specifically. Is the codebook flat or nested? Nested gets you better compression but more fragile references.' -- also check out my twitter bookmarks (maybe use a subagent to search through it because I want you to have comprehensive understanding of that data".
+
+4. The user clicks the "Let's go" button to submit the query.
+
+5. The user switches to the "Cowork" tab, which displays a prompt: "Let's knock something off your list". The user clicks the input field that says "How can I help you today?".
+
+6. The user types "can you use my twitter bookmarks to research this" into the input field.
+
+7. The user continues typing, completing the sentence to "can you use my twitter bookmarks to research this 'can you do a bit of deep research on this...'".
+
+8. The user continues typing, completing the full query from the previous frame: "can you use my twitter bookmarks to research this 'can you do a bit of deep research on this 'The codebook has hierarchy potential. 'VS Code' contains 'file tree', 'editor pane', 'terminal'. A moment might reference the top-level 'vscode' but delta against the 'editor pane' specifically. Is the codebook flat or nested? Nested gets you better compression but more fragile references.' '".
+
+9. The user clicks the "Let's go" button to submit the new query.
+
+10. The user switches back to the "Chat" tab, which now displays a new conversation. The user highlights a section of text that reads: "hi let's utilize the core principles I've mentioned in my preferences about how I want you to think. I am trying to store and use my screen data. basically a recording of everything that I am doing on my screen so you or any other agent could be one to one with me on stuff that I am doing. However with that comes a few problems: data compression cause I want it local, searchability for the agent, and limited context window during that search. With that here are a few of the ideas that I have: * 1st collect only frame diffs.".
+
+11. The user switches back to the "Cowork" tab, where the query from step 8 is still visible and highlighted.
+
+12. The user clicks the "Let's go" button again to submit the query.
+
+13. The user switches back to the "Chat" tab. The screen now shows a new conversation with the AI. The AI has responded with a suggestion: "we would rather lean on being comprehensive but maybe the idea is that we use the compressed version 'edited the auth function' for searchability and keep 'the text content alongside it'".
+
+14. The user switches back to the "Cowork" tab. The AI has generated a response to the query, which reads: "8:51 AM Investigated context window management for research features Investigated context window mechanisms for search and research features Good question — let me check the actual docs rather than guess. Investigated context window mechanisms for search and research features Short answer: deep research runs as a sub-agent in its own separate context window. Only the summary comes back into yours. A subagent handles the research in its Claude own separate context window, so the large file reads stay out of yours — only the summary and a small metadata trailer come back. Regular web search does eat context — but the results are snippets, not full pages. So it's relatively cheap per call. This is actually directly relevant to what you're building. Your two-layer architecture (index layer + content layer) is the same pattern — the consumer model searches against lightweight summaries, then selectively hydrates full content. Deep research just does this at query time rather than at storage time. Want to go back to the recursive codebook idea?".
+
+15. The user switches back to the "Chat" tab, where the AI's response is now visible. The user is now reviewing the AI's detailed answer about context window management and the two-layer architecture.
+
+KEY_FRAMES: [1, 2, 8, 11, 14]

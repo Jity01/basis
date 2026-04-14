@@ -1,0 +1,25 @@
+Input:  /Users/yeabkal/Startup/clip_frames/clip7
+Prompt: /Users/yeabkal/Startup/basis/packages/core/tests/prompts/vlm1-activity.txt
+Model:  accounts/fireworks/models/qwen3-vl-30b-a3b-instruct
+Frames: 15
+Extract: 0.0s
+VLM:     19.8s
+
+────────────────────────────────────────────────────────────────────────
+1. The user is in the 'Chat' tab of an application, viewing a document titled 'Screen recording storage and searchability optimization'. The screen displays a detailed discussion about a 'producer model', 'Deltas', 'Content blobs', and a decision matrix for what triggers a 'moment'. The user has not interacted with the content yet.
+2. The user clicks on the 'Cowork' tab in the top navigation bar, switching the view from 'Chat' to 'Cowork'.
+3. The screen transitions to the 'Cowork' interface, which displays a prompt 'Let's knock something off your list'. The user begins typing a query into the input field, starting with 'can you use my twitter'.
+4. The user continues typing in the input field, expanding the query to 'can you use my twitter bookmarks to research this'.
+5. The user completes the query, now reading 'can you use my twitter bookmarks to research this "The codebook has hierarchy potential. "VS Code" contains "file tree", "editor pane", "terminal". A moment might reference the top-level "vscode" but delta against the "editor pane" specifically. Is the codebook flat or nested? Nested gets you better compression but more fragile references."'.
+6. The user clicks the 'Let's go' button to submit the query.
+7. The screen returns to the 'Chat' tab, showing a new conversation thread. The user has pasted the previously typed query into the input field, which is now ready to be sent.
+8. The user clicks the 'Chat' tab in the top navigation bar, switching the view back from 'Cowork' to 'Chat'.
+9. The screen now displays the 'Chat' interface with the user's query pasted in the input field. The user has not sent the message yet.
+10. The user clicks the 'Chat' tab again, which is already selected, possibly to refocus the interface or ensure the correct view.
+11. The user selects a block of text within the chat history, highlighting it. The selected text is a message that starts with 'hi let's utilize the core principles I've mentioned in my preferences about how I want you to think.'
+12. The user clicks the 'Chat' tab in the top navigation bar, switching the view from 'Cowork' to 'Chat'.
+13. The user has now switched back to the 'Cowork' interface. The input field is filled with the same query from before, but the user has not yet clicked 'Let's go'.
+14. The user clicks the 'Let's go' button to submit the query.
+15. The screen transitions to the 'Chat' tab, showing a new conversation thread with the AI's response. The user's query is visible in the input field at the bottom, ready for a follow-up.
+
+KEY_FRAMES: [1, 7, 11, 13, 15]

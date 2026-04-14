@@ -15,14 +15,7 @@ import {
   deleteRawVideo,
   moveRawVideoToFailed,
   storeSegmentWikiChunk,
-  appendToCatalog,
-  CATALOG_FILE_NAME,
 } from "./storage";
-import { extractChunkMetadata } from "./tagger";
-import { computeSessions } from "./sessions";
-import { updateProfile } from "./profile";
-import { openIndex, indexChunk } from "./indexer";
-import { updateContext } from "./context";
 import {
   callNarratorVlm,
   parseKeyFrames,
@@ -170,6 +163,7 @@ async function maybeEnqueueWiki(
     const raw = await callWikiTextModel(wikiState, framesText, aiSettings);
     const { operations } = parseWikiResponse(raw);
     if (!operations.length) {
+      console.warn(`[pipeline] wiki model returned 0 operations. Raw (first 500 chars): ${raw.slice(0, 500)}`);
       return;
     }
     await enqueueWikiOps(CONTEXT_ROOT, {
@@ -214,15 +208,6 @@ async function processOneChunk(item: BacklogItem, aiSettings?: AISettings): Prom
       ocrTexts.push(txt);
     }
 
-    const keyFramePaths = keyIx.map((i) => allFrames[i - 1]!);
-    const metadata = await extractChunkMetadata(
-      rawNarrator.trim(),
-      keyFramePaths,
-      startTimeStr,
-      endTimeStr,
-      aiSettings
-    );
-
     await storeSegmentWikiChunk(
       chunkStart,
       rawNarrator,
@@ -238,15 +223,12 @@ async function processOneChunk(item: BacklogItem, aiSettings?: AISettings): Prom
         input_frame_count: allFrames.length,
         key_frame_indices_1based: keyIx,
         pipeline: "segment_wiki",
-        ...metadata,
       },
       ocrTexts,
       keyIx,
       allFrames.length,
       CONTEXT_ROOT
     );
-
-    await appendToCatalog(chunkStart, rawNarrator.trim(), metadata, CONTEXT_ROOT);
 
     await maybeEnqueueWiki(chunkStart, rawNarrator.trim(), ocrTexts, aiSettings);
 
@@ -339,38 +321,4 @@ export async function processBacklog(
   options.onProgress?.({ phase: "done", total, completed });
 
   await drainWikiQueue(CONTEXT_ROOT);
-
-  // Post-processing: compute sessions for affected days
-  if (completed > 0) {
-    const affectedDates = new Set<string>();
-    for (const item of backlog) {
-      const d = item.chunkStart;
-      const dateStr = `${String(d.getFullYear())}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-      affectedDates.add(dateStr);
-    }
-    for (const date of Array.from(affectedDates)) {
-      try {
-        const [yyyy, mm, dd] = date.split("-");
-        const catalogPath = path.join(CONTEXT_ROOT, yyyy!, mm!, dd!, CATALOG_FILE_NAME);
-        const raw = await fs.readFile(catalogPath, "utf8");
-        const catalog = JSON.parse(raw) as import("@context-manager/config").DayCatalog;
-        if (Array.isArray(catalog.chunks) && catalog.chunks.length > 0) {
-          const db = openIndex(CONTEXT_ROOT);
-          try {
-            for (const chunk of catalog.chunks) {
-              indexChunk(db, chunk);
-            }
-          } finally {
-            db.close();
-          }
-
-          const daySessions = await computeSessions(catalog, CONTEXT_ROOT, options.aiSettings);
-          await updateProfile(daySessions);
-          await updateContext(daySessions, CONTEXT_ROOT);
-        }
-      } catch {
-        // Catalog may not exist yet for this day
-      }
-    }
-  }
 }
