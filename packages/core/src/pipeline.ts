@@ -147,9 +147,6 @@ async function maybeEnqueueWiki(
   ocrTexts: string[],
   aiSettings?: AISettings
 ): Promise<void> {
-  if (aiSettings?.provider === "local") {
-    return;
-  }
   try {
     const wikiDir = wikiRootPath(CONTEXT_ROOT);
     const wikiState = await readWikiStateFlat(wikiDir);

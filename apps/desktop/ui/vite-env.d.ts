@@ -27,7 +27,6 @@ interface ContextManagerAPI {
   getExclusions: () => Promise<ExclusionsConfig>;
   updateExclusions: (settings: Partial<ExclusionsConfig>) => Promise<ExclusionsConfig>;
   scanInstalledApps: (opts?: { forceRefresh?: boolean }) => Promise<InstalledApp[]>;
-  scanInstalledAppFromPath: (appPath: string) => Promise<InstalledApp | null>;
   getInitializedExclusionBundleIds: () => Promise<string[]>;
   getSckitExclusionsInitState: () => Promise<SckitExclusionsInitState>;
   restartApp: () => Promise<void>;
@@ -35,16 +34,13 @@ interface ContextManagerAPI {
     Array<{ id: string; name: string }>
   >;
   // MCP scope grants
-  getLocalGrant: () => Promise<ScopeGrant | null>;
+  getLocalGrant: () => Promise<ScopeGrant>;
   setLocalScopes: (scopes: ContextScope[]) => Promise<ScopeGrant>;
   revokeLocalGrant: () => Promise<boolean>;
   getMcpServerPath: () => Promise<string>;
   // AI settings
   getAISettings: () => Promise<AISettings>;
   updateAISettings: (settings: Partial<AISettings>) => Promise<AISettings>;
-  // Background mode
-  getRunInBackground: () => Promise<boolean>;
-  setRunInBackground: (enabled: boolean) => Promise<boolean>;
 }
 
 declare global {

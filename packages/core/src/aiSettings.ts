@@ -1,38 +1,16 @@
 import * as fs from "fs";
 import * as path from "path";
 import { BASIS_ROOT } from "@context-manager/config";
-import type { AIProvider, AISettings } from "@context-manager/config";
+import type { AISettings } from "@context-manager/config";
 
-export type { AIProvider, AISettings } from "@context-manager/config";
+export type { AISettings } from "@context-manager/config";
 
 const AI_SETTINGS_FILE_NAME = "ai-settings.json";
-const DEFAULT_LOCAL_BASE_URL = "http://127.0.0.1:11434/v1";
 
-export const DEFAULT_AI_SETTINGS: AISettings = {
-  provider: "fireworks",
-  localBaseUrl: DEFAULT_LOCAL_BASE_URL,
-  localTaggingModel: "llava:7b",
-};
+export const DEFAULT_AI_SETTINGS: AISettings = {};
 
 export function getAISettingsPath(): string {
   return path.join(BASIS_ROOT, AI_SETTINGS_FILE_NAME);
-}
-
-function normalizeProvider(value: unknown): AIProvider {
-  return value === "local" ? "local" : "fireworks";
-}
-
-function normalizeLocalBaseUrl(value: unknown): string {
-  const trimmed = typeof value === "string" ? value.trim() : "";
-  if (!trimmed) {
-    return DEFAULT_LOCAL_BASE_URL;
-  }
-  const withoutTrailingSlash = trimmed.replace(/\/+$/, "");
-  return /\/v1$/i.test(withoutTrailingSlash) ? withoutTrailingSlash : `${withoutTrailingSlash}/v1`;
-}
-
-function normalizeModel(value: unknown, fallback: string): string {
-  return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }
 
 function normalizeFireworksApiKey(value: unknown): string | undefined {
@@ -41,11 +19,8 @@ function normalizeFireworksApiKey(value: unknown): string | undefined {
 }
 
 function normalizeAISettings(value: unknown): AISettings {
-  const raw = (value && typeof value === "object" ? value : {}) as Partial<AISettings>;
+  const raw = (value && typeof value === "object" ? value : {}) as Record<string, unknown>;
   return {
-    provider: normalizeProvider(raw.provider),
-    localBaseUrl: normalizeLocalBaseUrl(raw.localBaseUrl),
-    localTaggingModel: normalizeModel(raw.localTaggingModel, DEFAULT_AI_SETTINGS.localTaggingModel),
     fireworksApiKey: normalizeFireworksApiKey(raw.fireworksApiKey),
   };
 }

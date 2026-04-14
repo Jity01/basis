@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { ContextScope } from "@context-manager/config";
+import type { AISettings, ContextScope } from "@context-manager/config";
 
 contextBridge.exposeInMainWorld("contextManager", {
   startRecording: () => ipcRenderer.invoke("start-recording"),
@@ -55,7 +55,6 @@ contextBridge.exposeInMainWorld("contextManager", {
     }>;
   }) => ipcRenderer.invoke("update-exclusions", settings),
   scanInstalledApps: (opts?: { forceRefresh?: boolean }) => ipcRenderer.invoke("scan-installed-apps", opts || {}),
-  scanInstalledAppFromPath: (appPath: string) => ipcRenderer.invoke("scan-installed-app-from-path", appPath),
   getInitializedExclusionBundleIds: () => ipcRenderer.invoke("get-initialized-exclusion-bundle-ids"),
   getSckitExclusionsInitState: () => ipcRenderer.invoke("get-sckit-exclusions-init-state"),
   restartApp: () => ipcRenderer.invoke("restart-app"),
@@ -68,13 +67,5 @@ contextBridge.exposeInMainWorld("contextManager", {
   getMcpServerPath: () => ipcRenderer.invoke("get-mcp-server-path"),
   // AI settings
   getAISettings: () => ipcRenderer.invoke("get-ai-settings"),
-  updateAISettings: (settings: {
-    provider?: "fireworks" | "local";
-    localBaseUrl?: string;
-    localTaggingModel?: string;
-    fireworksApiKey?: string;
-  }) => ipcRenderer.invoke("update-ai-settings", settings),
-  // Background mode
-  getRunInBackground: () => ipcRenderer.invoke("get-run-in-background"),
-  setRunInBackground: (enabled: boolean) => ipcRenderer.invoke("set-run-in-background", enabled),
+  updateAISettings: (settings: Partial<AISettings>) => ipcRenderer.invoke("update-ai-settings", settings),
 });

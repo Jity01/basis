@@ -2,6 +2,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { BASIS_ROOT } from "@context-manager/config";
 import type { ContextScope, ScopeGrant, GrantsFile } from "@context-manager/config";
+import { DEFAULT_LOCAL_SCOPES } from "@context-manager/config";
 
 const GRANTS_PATH = path.join(BASIS_ROOT, "mcp-grants.json");
 const LOCAL_CLIENT_ID = "local";
@@ -26,8 +27,12 @@ export function listGrants(): Record<string, ScopeGrant> {
   return readGrantsFile().grants;
 }
 
-export function getLocalGrant(): ScopeGrant | null {
-  return readGrantsFile().grants[LOCAL_CLIENT_ID] || null;
+export function getLocalGrant(): ScopeGrant {
+  const file = readGrantsFile();
+  if (LOCAL_CLIENT_ID in file.grants) {
+    return file.grants[LOCAL_CLIENT_ID]!;
+  }
+  return setLocalScopes(DEFAULT_LOCAL_SCOPES);
 }
 
 /** Set the local client's scopes (replaces existing). */
@@ -49,9 +54,6 @@ export function setLocalScopes(scopes: ContextScope[]): ScopeGrant {
 }
 
 export function revokeLocalGrant(): boolean {
-  const file = readGrantsFile();
-  if (!file.grants[LOCAL_CLIENT_ID]) return false;
-  delete file.grants[LOCAL_CLIENT_ID];
-  writeGrantsFile(file);
+  setLocalScopes([]);
   return true;
 }

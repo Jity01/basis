@@ -102,8 +102,7 @@ export async function runBacklog(trigger: ProcessingTrigger, shouldContinue: () 
 }
 
 export function maybeStartLiveProcessing(): void {
-  const aiSettings = readAISettings();
-  if (aiSettings.provider !== "fireworks" || processingState.isProcessing || countPendingChunks() === 0) {
+  if (processingState.isProcessing || countPendingChunks() === 0) {
     return;
   }
 

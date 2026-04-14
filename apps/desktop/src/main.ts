@@ -1,8 +1,6 @@
 import "./bundledBinPaths";
-import { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain } from "electron";
-import * as fs from "fs";
+import { app, BrowserWindow } from "electron";
 import * as path from "path";
-import { BASIS_ROOT } from "@context-manager/config";
 import { setupIpc, setMainWindow } from "./ipcHandlers";
 import { clearExclusionsRequiresRestart, loadExclusions, stopHotBuffer } from "@context-manager/core";
 import { initializeSckitExclusions } from "./sckitExclusions";
@@ -10,22 +8,6 @@ import { initializeSckitExclusions } from "./sckitExclusions";
 console.log("[Electron] Main process starting...");
 
 let mainWindow: BrowserWindow | null = null;
-let tray: Tray | null = null;
-let isQuitting = false;
-
-// ── Background mode ──────────────────────────────────────────────────────────
-
-const SETTINGS_PATH = path.join(BASIS_ROOT, "settings.json");
-
-function readRunInBackground(): boolean {
-  try {
-    const raw = fs.readFileSync(SETTINGS_PATH, "utf8");
-    const parsed = JSON.parse(raw) as { runInBackground?: boolean };
-    return parsed.runInBackground === true;
-  } catch {
-    return false;
-  }
-}
 
 // ── Single instance lock ─────────────────────────────────────────────────────
 
@@ -53,6 +35,8 @@ function createWindow(): void {
     height: 480,
     show: true,
     center: true,
+    // Match ui/styles.css --bg so the shell isn’t bright white before React paints.
+    backgroundColor: "#2c1e14",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -68,59 +52,12 @@ function createWindow(): void {
     mainWindow!.focus();
   });
 
-  mainWindow.on("close", (event) => {
-    if (!isQuitting && readRunInBackground()) {
-      event.preventDefault();
-      mainWindow?.hide();
-      ensureTray();
-    }
-  });
-
   if (isDev) {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL!);
   } else {
     mainWindow.loadFile(path.join(__dirname, "../dist-renderer/index.html"));
   }
 }
-
-// ── System tray ──────────────────────────────────────────────────────────────
-
-function ensureTray(): void {
-  if (tray) return;
-
-  const icon = nativeImage.createEmpty();
-  tray = new Tray(icon);
-  tray.setToolTip("Basis — Running in background");
-
-  const contextMenu = Menu.buildFromTemplate([
-    { label: "Open Basis", click: () => { mainWindow?.show(); mainWindow?.focus(); } },
-    { type: "separator" },
-    { label: "Quit", click: () => { isQuitting = true; app.quit(); } },
-  ]);
-  tray.setContextMenu(contextMenu);
-
-  tray.on("click", () => {
-    mainWindow?.show();
-    mainWindow?.focus();
-  });
-}
-
-// ── IPC for background mode toggle ───────────────────────────────────────────
-
-ipcMain.handle("get-run-in-background", () => readRunInBackground());
-
-ipcMain.handle("set-run-in-background", (_event, enabled: boolean) => {
-  try {
-    const current = (() => {
-      try { return JSON.parse(fs.readFileSync(SETTINGS_PATH, "utf8")); } catch { return {}; }
-    })();
-    fs.mkdirSync(path.dirname(SETTINGS_PATH), { recursive: true });
-    fs.writeFileSync(SETTINGS_PATH, JSON.stringify({ ...current, runInBackground: enabled }, null, 2) + "\n", "utf8");
-  } catch {
-    // Non-critical
-  }
-  return enabled;
-});
 
 // ── App lifecycle ────────────────────────────────────────────────────────────
 
@@ -137,23 +74,13 @@ app.whenReady().then(() => {
   createWindow();
 });
 
-app.on("before-quit", () => {
-  isQuitting = true;
-});
-
 app.on("will-quit", () => {
   stopHotBuffer();
-  if (tray) {
-    tray.destroy();
-    tray = null;
-  }
 });
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
-    if (!readRunInBackground()) {
-      app.quit();
-    }
+    app.quit();
   }
 });
 

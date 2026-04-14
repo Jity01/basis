@@ -21,3 +21,4 @@ apps/desktop/resources/
 skills/dot-context-filesystem/
 
 .turbo/
+.claude/

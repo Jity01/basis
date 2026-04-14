@@ -39,20 +39,16 @@ function getFireworksBaseUrl(): string {
   return process.env.FIREWORKS_BASE_URL?.trim() || DEFAULT_FIREWORKS_BASE_URL;
 }
 
-function getVlModel(settings?: AISettings): string {
-  return settings?.provider === "local" ? settings.localTaggingModel : DEFAULT_VL_MODEL;
+function getVlModel(): string {
+  return DEFAULT_VL_MODEL;
 }
 
-function getChatUrl(settings?: AISettings): string {
-  const baseUrl =
-    settings?.provider === "local" ? settings.localBaseUrl : getFireworksBaseUrl();
+function getChatUrl(): string {
+  const baseUrl = getFireworksBaseUrl();
   return `${baseUrl.replace(/\/$/, "")}/chat/completions`;
 }
 
 function getChatHeaders(settings?: AISettings): Record<string, string> {
-  if (settings?.provider === "local") {
-    return { "Content-Type": "application/json" };
-  }
   return {
     "Content-Type": "application/json",
     Authorization: `Bearer ${getApiKey(settings)}`,
@@ -156,7 +152,7 @@ export async function callNarratorVlm(
   }
 
   const payload = {
-    model: getVlModel(settings),
+    model: getVlModel(),
     messages: [
       { role: "system", content: NARRATOR_SYSTEM_PROMPT },
       { role: "user", content },
@@ -165,7 +161,7 @@ export async function callNarratorVlm(
     temperature: 0.2,
   };
 
-  const response = await fetch(getChatUrl(settings), {
+  const response = await fetch(getChatUrl(), {
     method: "POST",
     headers: getChatHeaders(settings),
     body: JSON.stringify(payload),
@@ -196,7 +192,7 @@ export async function callFormattedOcrVl(
   const dataUrl = `data:${mediaType};base64,${b64}`;
 
   const payload = {
-    model: getVlModel(settings),
+    model: getVlModel(),
     messages: [
       {
         role: "user",
@@ -210,7 +206,7 @@ export async function callFormattedOcrVl(
     temperature: 0.2,
   };
 
-  const response = await fetch(getChatUrl(settings), {
+  const response = await fetch(getChatUrl(), {
     method: "POST",
     headers: getChatHeaders(settings),
     body: JSON.stringify(payload),
@@ -378,9 +374,6 @@ export async function callWikiTextModel(
   framesText: string,
   settings?: AISettings
 ): Promise<string> {
-  if (settings?.provider === "local") {
-    throw new Error("Wiki text model requires Fireworks (set provider to fireworks or configure API key).");
-  }
   const system = getMergedWikiSystemPrompt();
   const userMessage = `## Current wiki state\n\n${wikiState}\n\n## New frames\n\n${framesText}${WIKI_JSON_USER_SUFFIX}`;
 

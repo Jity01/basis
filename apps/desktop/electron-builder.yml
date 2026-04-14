@@ -1,6 +1,6 @@
 # https://www.electron.build/configuration/configuration
-appId: com.basislabs.context-manager
-productName: Context Manager
+appId: com.basislabs.justreheat
+productName: JustReheat
 copyright: Copyright © Basis Labs
 # pnpm hoists electron to the repo root; pin the version for the packager.
 electronVersion: 33.4.11

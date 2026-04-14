@@ -21,7 +21,7 @@ import type {
   ExclusionsConfig,
 } from "@context-manager/config";
 import { CONTEXT_ROOT, HOT_BUFFER_CONFIG, hotBufferDir } from "@context-manager/config";
-import { inspectAppBundlePath, scanInstalledApps } from "./appScanner";
+import { scanInstalledApps } from "./appScanner";
 import { getInitializedExclusionBundleIds, getSckitExclusionsInitState } from "./sckitExclusions";
 import { setMainWindow as setMainWindowRef } from "./mainWindowRef";
 import {
@@ -148,10 +148,6 @@ export function setupIpc(): void {
 
   ipcMain.handle("scan-installed-apps", (_event, payload?: { forceRefresh?: boolean }) => {
     return scanInstalledApps(payload?.forceRefresh === true);
-  });
-
-  ipcMain.handle("scan-installed-app-from-path", (_event, appPath: string) => {
-    return inspectAppBundlePath(appPath);
   });
 
   ipcMain.handle("get-initialized-exclusion-bundle-ids", () => {

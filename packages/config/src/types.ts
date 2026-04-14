@@ -1,12 +1,7 @@
 // ── AI Settings ──────────────────────────────────────────────────────────────
 
-export type AIProvider = "fireworks" | "local";
-
+/** Fireworks-only. Key used when `FIREWORKS_API_KEY` is not set in the environment. */
 export type AISettings = {
-  provider: AIProvider;
-  localBaseUrl: string;
-  localTaggingModel: string;
-  /** Used when `FIREWORKS_API_KEY` is not set in the environment. */
   fireworksApiKey?: string;
 };
 

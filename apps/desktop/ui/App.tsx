@@ -2,11 +2,8 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import type {
   ProcessingStatus,
   AISettings,
-  ContextScope,
   ExclusionEntry,
   ExclusionsConfig,
-  InstalledApp,
-  ScopeGrant,
   SckitExclusionsInitState,
 } from "@context-manager/config";
 
@@ -15,11 +12,9 @@ const INDEX_SECTION_PATTERN = /\[(\d{2}):(\d{2})\]\n([\s\S]*?)(?=\n\n\[\d{2}:\d{
 
 type TabId = "controls" | "settings";
 
-const fallbackAISettings: AISettings = {
-  provider: "fireworks",
-  localBaseUrl: "http://127.0.0.1:11434/v1",
-  localTaggingModel: "llava:7b",
-};
+type BannerState = { variant: "error" | "success"; message: string } | null;
+
+const fallbackAISettings: AISettings = {};
 
 const initialExclusionsConfig: ExclusionsConfig = {
   requires_restart: false,
@@ -105,7 +100,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<TabId>("controls");
   const [isRecording, setIsRecording] = useState(false);
   const [duration, setDuration] = useState(0);
-  const [error, setError] = useState<string | null>(null);
+  const [banner, setBanner] = useState<BannerState>(null);
   const [processingStatus, setProcessingStatus] = useState<ProcessingStatus>({
     isProcessing: false,
     currentChunk: 0,
@@ -115,15 +110,11 @@ export default function App() {
     activeRecordingChunk: false,
     trigger: null,
   });
-  const [localGrant, setLocalGrant] = useState<ScopeGrant | null>(null);
   const [mcpServerPath, setMcpServerPath] = useState<string>("");
-  const [runInBackground, setRunInBackgroundState] = useState<boolean>(false);
   const [aiSettings, setAISettings] = useState<AISettings>(fallbackAISettings);
-  const [chunkDurationMinutes, setChunkDurationMinutes] = useState(5);
+  const [chunkDurationMinutes, setChunkDurationMinutes] = useState(1);
   const [exclusions, setExclusions] = useState<ExclusionsConfig>(initialExclusionsConfig);
-  const [installedApps, setInstalledApps] = useState<InstalledApp[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [pickerQuery, setPickerQuery] = useState("");
   const [manualBundleId, setManualBundleId] = useState("");
   const [sckitExclusionsState, setSckitExclusionsState] = useState<SckitExclusionsInitState>(
     initialSckitExclusionsState
@@ -170,7 +161,10 @@ export default function App() {
         .arrayBuffer()
         .then((buf) => contextManager.sendRecordingChunk(buf))
         .catch((err) => {
-          setError(err instanceof Error ? err.message : "Failed to read recorded chunk");
+          setBanner({
+            variant: "error",
+            message: err instanceof Error ? err.message : "Failed to read recorded chunk",
+          });
         })
         .finally(() => {
           pendingChunkSendsRef.current.delete(sendPromise);
@@ -180,7 +174,7 @@ export default function App() {
 
     recorder.onerror = (event) => {
       const maybeError = (event as unknown as { error?: Error }).error;
-      setError(maybeError?.message ?? "MediaRecorder error");
+      setBanner({ variant: "error", message: maybeError?.message ?? "MediaRecorder error" });
     };
   }
 
@@ -201,7 +195,7 @@ export default function App() {
 
   const startCapture = useCallback(async () => {
     try {
-      setError(null);
+      setBanner(null);
       if (!contextManager) {
         throw new Error(
           "contextManager is not available. Run the app with Electron (pnpm dev), not in a browser."
@@ -230,7 +224,10 @@ export default function App() {
             await contextManager.rotateRecording();
             await startRecorderForCurrentFile();
           } catch (err) {
-            setError(err instanceof Error ? err.message : "Failed rotating recorder");
+            setBanner({
+              variant: "error",
+              message: err instanceof Error ? err.message : "Failed rotating recorder",
+            });
             setIsRecording(false);
             stoppingRef.current = true;
           } finally {
@@ -252,7 +249,10 @@ export default function App() {
 
       setIsRecording(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to start recording");
+      setBanner({
+        variant: "error",
+        message: err instanceof Error ? err.message : "Failed to start recording",
+      });
     }
   }, [startRecorderForCurrentFile]);
 
@@ -285,7 +285,10 @@ export default function App() {
         try {
           await finalizeStop();
         } catch (err) {
-          setError(err instanceof Error ? err.message : "Failed to stop recording");
+          setBanner({
+            variant: "error",
+            message: err instanceof Error ? err.message : "Failed to stop recording",
+          });
         }
       };
       mediaRecorderRef.current.stop();
@@ -293,7 +296,10 @@ export default function App() {
       try {
         await finalizeStop();
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to stop recording");
+        setBanner({
+          variant: "error",
+          message: err instanceof Error ? err.message : "Failed to stop recording",
+        });
       }
     }
   }, []);
@@ -308,46 +314,18 @@ export default function App() {
 
   const processNow = useCallback(async () => {
     try {
-      setError(null);
+      setBanner(null);
       const result = await contextManager.processNow();
       if (!result.started) {
         await refreshProcessingStatus();
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to process backlog");
+      setBanner({
+        variant: "error",
+        message: err instanceof Error ? err.message : "Failed to process backlog",
+      });
     }
   }, [refreshProcessingStatus]);
-
-  const toggleScope = useCallback(async (scope: ContextScope) => {
-    try {
-      setError(null);
-      const current = localGrant?.scopes || [];
-      const next = current.includes(scope) ? current.filter((s) => s !== scope) : [...current, scope];
-      const updated = await contextManager.setLocalScopes(next);
-      setLocalGrant(updated);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed updating scopes");
-    }
-  }, [localGrant]);
-
-  const revokeAllScopes = useCallback(async () => {
-    try {
-      setError(null);
-      await contextManager.revokeLocalGrant();
-      setLocalGrant(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed revoking grant");
-    }
-  }, []);
-
-  const toggleBackground = useCallback(async (enabled: boolean) => {
-    try {
-      const next = await contextManager.setRunInBackground(enabled);
-      setRunInBackgroundState(next);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed updating background mode");
-    }
-  }, []);
 
   const copyToClipboard = useCallback(async (value: string | null) => {
     if (!value) {
@@ -356,37 +334,46 @@ export default function App() {
     try {
       await navigator.clipboard.writeText(value);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed copying to clipboard");
+      setBanner({
+        variant: "error",
+        message: err instanceof Error ? err.message : "Failed copying to clipboard",
+      });
     }
   }, []);
 
   const saveAISettings = useCallback(async () => {
     try {
-      setError(null);
+      setBanner(null);
       const updated = await contextManager.updateAISettings(aiSettings);
       setAISettings(updated);
-      setError("AI settings saved.");
+      setBanner({ variant: "success", message: "Settings saved." });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save AI settings");
+      setBanner({
+        variant: "error",
+        message: err instanceof Error ? err.message : "Failed to save Fireworks API key",
+      });
     }
   }, [aiSettings]);
 
   const saveChunkSettings = useCallback(async () => {
     try {
-      setError(null);
+      setBanner(null);
       const updated = await contextManager.updateChunkSettings({
         chunkDurationMinutes: Math.max(1, Math.round(chunkDurationMinutes)),
       });
       setChunkDurationMinutes(updated.chunkDurationMinutes);
-      setError("Capture settings saved.");
+      setBanner({ variant: "success", message: "Capture settings saved." });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save capture settings");
+      setBanner({
+        variant: "error",
+        message: err instanceof Error ? err.message : "Failed to save capture settings",
+      });
     }
   }, [chunkDurationMinutes]);
 
   const setExclusionsAndNotify = useCallback((next: ExclusionsConfig, notice: string) => {
     setExclusions(next);
-    setError(notice);
+    setBanner({ variant: "success", message: notice });
   }, []);
 
   const updateExclusionEntries = useCallback(
@@ -490,14 +477,8 @@ export default function App() {
     }
 
     void refreshProcessingStatus();
-    void contextManager.getLocalGrant().then((grant) => {
-      setLocalGrant(grant);
-    });
     void contextManager.getMcpServerPath().then((p) => {
       setMcpServerPath(p);
-    });
-    void contextManager.getRunInBackground().then((enabled) => {
-      setRunInBackgroundState(enabled);
     });
     void contextManager.getChunkSettings().then((settings) => {
       setChunkDurationMinutes(settings.chunkDurationMinutes);
@@ -507,9 +488,6 @@ export default function App() {
     });
     void contextManager.getExclusions().then((settings) => {
       setExclusions(settings);
-    });
-    void contextManager.scanInstalledApps().then((apps) => {
-      setInstalledApps(apps);
     });
     void contextManager.getSckitExclusionsInitState().then((state) => {
       setSckitExclusionsState(state);
@@ -539,50 +517,6 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [frameLightbox]);
 
-  useEffect(() => {
-    if (!pickerOpen) {
-      return;
-    }
-    const onDragOver = (event: DragEvent) => {
-      event.preventDefault();
-    };
-    const onDrop = (event: DragEvent) => {
-      event.preventDefault();
-      const droppedFile = event.dataTransfer?.files?.[0] as (File & { path?: string }) | undefined;
-      const filePath = droppedFile?.path;
-      if (!filePath || !filePath.endsWith(".app")) {
-        return;
-      }
-      void contextManager.scanInstalledAppFromPath(filePath).then((appEntry) => {
-        if (!appEntry) {
-          return;
-        }
-        void addExclusion({ bundleId: appEntry.bundleId, name: appEntry.name });
-      });
-    };
-    window.addEventListener("dragover", onDragOver);
-    window.addEventListener("drop", onDrop);
-    return () => {
-      window.removeEventListener("dragover", onDragOver);
-      window.removeEventListener("drop", onDrop);
-    };
-  }, [addExclusion, pickerOpen]);
-
-  const exclusionQuery = pickerQuery.trim().toLowerCase();
-  const excludedIds = new Set(exclusions.bundle_ids.map((entry) => entry.bundle_id));
-  const filteredApps = installedApps.filter((app) => {
-    if (excludedIds.has(app.bundleId)) {
-      return false;
-    }
-    if (!exclusionQuery) {
-      return true;
-    }
-    return (
-      app.name.toLowerCase().includes(exclusionQuery) ||
-      app.bundleId.toLowerCase().includes(exclusionQuery)
-    );
-  });
-  const isLocalProvider = aiSettings.provider === "local";
   const statusToneClass = processingStatus.isProcessing
     ? "tone-processing"
     : isRecording
@@ -590,7 +524,6 @@ export default function App() {
       : processingStatus.pendingChunks > 0
         ? "tone-pending"
         : "tone-ready";
-  const grantedScopes = localGrant?.scopes || [];
   const claudeConfigSnippet = mcpServerPath
     ? JSON.stringify({ mcpServers: { basis: { command: "node", args: [mcpServerPath] } } }, null, 2)
     : "";
@@ -598,7 +531,7 @@ export default function App() {
   return (
     <div className="app-shell">
       <div className="app-frame content-area">
-        <div className="tab-list" role="tablist" aria-label="Context manager sections">
+        <div className="tab-list" role="tablist" aria-label="JustReheat sections">
           <button
             className={`tab-button ${activeTab === "controls" ? "is-active" : ""}`}
             onClick={() => setActiveTab("controls")}
@@ -615,7 +548,13 @@ export default function App() {
           </button>
         </div>
 
-        {error && <p className="banner banner-error">{error}</p>}
+        {banner && (
+          <p
+            className={`banner ${banner.variant === "success" ? "banner-success" : "banner-error"}`}
+          >
+            {banner.message}
+          </p>
+        )}
         {!sckitExclusionsState.initialized && sckitExclusionsState.error && (
           <p className="banner banner-error">
             OS-level exclusions failed to initialize: {sckitExclusionsState.error}
@@ -659,6 +598,36 @@ export default function App() {
           <section className="panel panel-form">
             <div className="settings-stack">
               <div className="section-heading">
+                <h2 className="section-title">
+                  Fireworks API key{" "}
+                  <span className="tone-muted">(Important)</span>
+                </h2>
+              </div>
+
+              <label className="field-label" htmlFor="fireworks-api-key">
+                API key
+              </label>
+              <input
+                id="fireworks-api-key"
+                className="field-input"
+                type="password"
+                autoComplete="off"
+                spellCheck={false}
+                placeholder="Paste key if not using FIREWORKS_API_KEY in the environment"
+                value={aiSettings.fireworksApiKey ?? ""}
+                onChange={(event) =>
+                  setAISettings((current) => ({
+                    ...current,
+                    fireworksApiKey: event.target.value,
+                  }))
+                }
+              />
+              <p className="support-copy">
+                Image processing uses Fireworks, which respects a Zero Data Retention policy. Without your
+                API key here, JustReheat won't be able to run.
+              </p>
+
+              <div className="section-heading">
                 <h2 className="section-title">Capture settings</h2>
               </div>
 
@@ -674,19 +643,19 @@ export default function App() {
                 value={chunkDurationMinutes}
                 onChange={(event) => {
                   const next = Number(event.target.value);
-                  setChunkDurationMinutes(Number.isFinite(next) ? next : 5);
+                  setChunkDurationMinutes(Number.isFinite(next) ? next : 1);
                 }}
               />
               <p className="support-copy">
-                New recordings rotate every {chunkDurationMinutes || 5} minute
-                {Math.abs(chunkDurationMinutes || 5) === 1 ? "" : "s"}. Default is 5 minutes.
+                New recordings rotate every {chunkDurationMinutes || 1} minute
+                {Math.abs(chunkDurationMinutes || 1) === 1 ? "" : "s"}. Default is 1 minute.
               </p>
 
               <div className="section-heading">
                 <h2 className="section-title">Privacy &mdash; Excluded Windows</h2>
               </div>
               <p className="support-copy">
-                Apps in this list are blocked at the OS level. Their pixels never enter Basis.
+                Apps in this list are blocked at the OS level. Their pixels never enter JustReheat.
               </p>
               {exclusions.requires_restart && (
                 <div className="banner banner-warning restart-banner">
@@ -720,49 +689,13 @@ export default function App() {
                 <button
                   className="button button-secondary"
                   type="button"
-                  onClick={() => {
-                    setPickerOpen((current) => !current);
-                    if (!pickerOpen) {
-                      void contextManager.scanInstalledApps().then((apps) => setInstalledApps(apps));
-                    }
-                  }}
+                  onClick={() => setPickerOpen((current) => !current)}
                 >
                   {pickerOpen ? "Close App Picker" : "Add App"}
                 </button>
               </div>
               {pickerOpen && (
                 <div className="exclusion-picker">
-                  <input
-                    className="field-input"
-                    placeholder="Search apps by name or bundle ID"
-                    value={pickerQuery}
-                    onChange={(event) => setPickerQuery(event.target.value)}
-                  />
-                  <div className="exclusion-picker-results">
-                    {filteredApps.length === 0 ? (
-                      <p className="empty-state">No matching apps.</p>
-                    ) : (
-                      filteredApps.map((appEntry) => (
-                        <button
-                          key={appEntry.bundleId}
-                          className="exclusion-picker-item"
-                          type="button"
-                          onClick={() => {
-                            void addExclusion({ bundleId: appEntry.bundleId, name: appEntry.name });
-                          }}
-                        >
-                          {appEntry.iconPath ? (
-                            <img src={`file://${appEntry.iconPath}`} alt="" className="exclusion-app-icon" />
-                          ) : (
-                            <span className="exclusion-app-icon-fallback" aria-hidden>
-                              App
-                            </span>
-                          )}
-                          <span>{appEntry.name}</span>
-                        </button>
-                      ))
-                    )}
-                  </div>
                   <div className="exclusion-manual-add">
                     <label className="field-label" htmlFor="manual-bundle-id">
                       Enter bundle ID manually
@@ -790,97 +723,8 @@ export default function App() {
                         Add
                       </button>
                     </div>
-                    <p className="support-copy">You can also drag a <code>.app</code> bundle onto this list.</p>
                   </div>
                 </div>
-              )}
-
-              <div className="section-heading">
-                <h2 className="section-title">AI settings</h2>
-              </div>
-
-              <label className="field-label" htmlFor="provider">
-                Provider
-              </label>
-              <select
-                id="provider"
-                className="field-input"
-                value={aiSettings.provider}
-                onChange={(event) =>
-                  setAISettings((current) => ({
-                    ...current,
-                    provider: event.target.value === "local" ? "local" : "fireworks",
-                  }))
-                }
-              >
-                <option value="fireworks">Fireworks</option>
-                <option value="local">Local (Ollama)</option>
-              </select>
-              {!isLocalProvider && (
-                <>
-                  <label className="field-label" htmlFor="fireworks-api-key">
-                    Fireworks API key
-                  </label>
-                  <input
-                    id="fireworks-api-key"
-                    className="field-input"
-                    type="password"
-                    autoComplete="off"
-                    spellCheck={false}
-                    placeholder="Paste key if not using FIREWORKS_API_KEY in the environment"
-                    value={aiSettings.fireworksApiKey ?? ""}
-                    onChange={(event) =>
-                      setAISettings((current) => ({
-                        ...current,
-                        fireworksApiKey: event.target.value,
-                      }))
-                    }
-                  />
-                  <p className="support-copy">
-                    Tagging uses <code>FIREWORKS_API_KEY</code> when set; otherwise the key above
-                    (saved in <code>ai-settings.json</code>). Optional env: <code>FIREWORKS_MODEL</code>,{" "}
-                    <code>FIREWORKS_BASE_URL</code>.
-                  </p>
-                </>
-              )}
-              {isLocalProvider && (
-                <>
-                  <label className="field-label" htmlFor="ollama-base-url">
-                    Ollama base URL
-                  </label>
-                  <input
-                    id="ollama-base-url"
-                    className="field-input"
-                    type="text"
-                    value={aiSettings.localBaseUrl}
-                    onChange={(event) =>
-                      setAISettings((current) => ({
-                        ...current,
-                        localBaseUrl: event.target.value,
-                      }))
-                    }
-                  />
-                  <label className="field-label" htmlFor="ollama-tagging-model">
-                    Local tagging model
-                  </label>
-                  <input
-                    id="ollama-tagging-model"
-                    className="field-input"
-                    type="text"
-                    value={aiSettings.localTaggingModel}
-                    onChange={(event) =>
-                      setAISettings((current) => ({
-                        ...current,
-                        localTaggingModel: event.target.value,
-                      }))
-                    }
-                  />
-                  <p className="support-copy">
-                    Use Ollama&apos;s OpenAI-compatible endpoint. If you enter{" "}
-                    <code>http://127.0.0.1:11434</code>, the app will automatically normalize it to{" "}
-                    <code>/v1</code>.
-                  </p>
-                </>
               )}
 
               <div className="section-heading">
@@ -888,8 +732,8 @@ export default function App() {
               </div>
 
               <p className="support-copy">
-                Basis runs as a local stdio MCP server. Configure Claude Desktop (or any MCP client)
-                to launch it directly. No network, no tunnels.
+                JustReheat runs as a local stdio MCP server. Connect Claude Desktop (or any MCP client
+                on your desktop) directly.
               </p>
 
               <div className="info-card">
@@ -918,61 +762,6 @@ export default function App() {
                   </button>
                 </div>
               </div>
-
-              <div className="section-heading">
-                <h2 className="section-title">Scope Grants</h2>
-              </div>
-
-              <p className="support-copy">
-                Choose what the MCP server can return. Tools that need a higher scope
-                will return an error until you grant it.
-              </p>
-
-              <label className="checkbox-row">
-                <input
-                  type="checkbox"
-                  checked={grantedScopes.includes("context:metadata")}
-                  onChange={() => void toggleScope("context:metadata")}
-                />
-                <span><strong>context:metadata</strong> — day names, summaries, search results (low sensitivity)</span>
-              </label>
-              <label className="checkbox-row">
-                <input
-                  type="checkbox"
-                  checked={grantedScopes.includes("context:ocr")}
-                  onChange={() => void toggleScope("context:ocr")}
-                />
-                <span><strong>context:ocr</strong> — OCR text from your screen (medium sensitivity)</span>
-              </label>
-              <label className="checkbox-row">
-                <input
-                  type="checkbox"
-                  checked={grantedScopes.includes("context:frames")}
-                  onChange={() => void toggleScope("context:frames")}
-                />
-                <span><strong>context:frames</strong> — actual screenshots (high sensitivity)</span>
-              </label>
-
-              {grantedScopes.length > 0 && (
-                <div>
-                  <button className="button button-ghost" onClick={() => void revokeAllScopes()} type="button">
-                    Revoke All Grants
-                  </button>
-                </div>
-              )}
-
-              <div className="section-heading">
-                <h2 className="section-title">Background Mode</h2>
-              </div>
-
-              <label className="checkbox-row">
-                <input
-                  type="checkbox"
-                  checked={runInBackground}
-                  onChange={(event) => void toggleBackground(event.target.checked)}
-                />
-                <span>Keep recording when window is closed (minimize to system tray)</span>
-              </label>
 
               <div>
                 <button className="button button-primary" onClick={() => void saveAllSettings()} type="button">

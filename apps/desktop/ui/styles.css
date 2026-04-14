@@ -237,6 +237,12 @@ code {
   color: #e8978c;
 }
 
+.banner-success {
+  background: var(--accent-soft);
+  border-color: rgba(146, 184, 154, 0.35);
+  color: #a8d4b0;
+}
+
 .banner-info {
   background: rgba(146, 184, 154, 0.12);
   color: var(--accent);
@@ -932,50 +938,6 @@ select.field-input option {
   border-radius: 16px;
   padding: 12px;
   background: var(--surface-muted);
-}
-
-.exclusion-picker-results {
-  max-height: 220px;
-  overflow: auto;
-  display: grid;
-  gap: 8px;
-}
-
-.exclusion-picker-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--surface);
-  color: var(--text);
-  padding: 8px 10px;
-  cursor: pointer;
-  text-align: left;
-}
-
-.exclusion-picker-item:hover {
-  border-color: var(--border-strong);
-  background: var(--surface-strong);
-}
-
-.exclusion-app-icon {
-  width: 22px;
-  height: 22px;
-  object-fit: contain;
-  border-radius: 5px;
-}
-
-.exclusion-app-icon-fallback {
-  width: 22px;
-  height: 22px;
-  border-radius: 5px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--surface-strong);
-  color: var(--text-muted);
-  font-size: 0.64rem;
 }
 
 .exclusion-manual-add {

@@ -120,11 +120,3 @@ export function scanInstalledApps(forceRefresh = false): InstalledApp[] {
   cachedApps = apps;
   return apps;
 }
-
-export function inspectAppBundlePath(appBundlePath: string): InstalledApp | null {
-  const normalizedPath = appBundlePath.trim();
-  if (!normalizedPath.endsWith(".app")) {
-    return null;
-  }
-  return inspectApp(normalizedPath);
-}

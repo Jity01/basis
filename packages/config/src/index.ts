@@ -1,7 +1,7 @@
 import * as path from "path";
 import * as os from "os";
-
 export * from "./types";
+export { DEFAULT_LOCAL_SCOPES } from "./localScopes";
 
 export const CONTEXT_ROOT =
   process.env.CONTEXT_ROOT || path.join(os.homedir(), "context");
@@ -32,8 +32,8 @@ export function hotBufferDir(contextRoot: string = CONTEXT_ROOT): string {
   return path.join(contextRoot, ".hotbuffer");
 }
 
-/** Flat wiki root under context (`~/context/.wiki/`). */
-export const WIKI_DIR_NAME = ".wiki";
+/** Flat wiki root under context (`~/context/wiki/`). */
+export const WIKI_DIR_NAME = "wiki";
 export const OCR_DIR_NAME = "ocr";
 export const TEMPORAL_DESCRIPTION_FILE_NAME = "temporal_description.txt";
 export const TEMPORAL_INDEX_FILE_NAME = "temporal_index.json";
