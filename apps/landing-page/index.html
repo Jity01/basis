@@ -59,7 +59,9 @@ background-repeat:repeat;background-size:256px 256px}
 nav{position:fixed;top:0;left:0;right:0;z-index:100;padding:1rem 2rem;display:flex;align-items:center;justify-content:space-between;
 background:var(--bg-nav);backdrop-filter:blur(12px);border-bottom:2px solid var(--border-accent);transition:background .4s,border-color .4s}
 .nav-left{display:flex;align-items:center;gap:10px}
-.nav-logo-icon{display:block;flex-shrink:0}
+.nav-logo-icon{display:block;flex-shrink:0;width:36px;height:36px;vertical-align:middle;
+filter:drop-shadow(0 1px 2px rgba(61,43,26,0.12))}
+[data-theme="dark"] .nav-logo-icon{filter:drop-shadow(0 1px 3px rgba(0,0,0,0.35))}
 .nav-logo-img--dark{display:none}
 [data-theme="dark"] .nav-logo-img--light{display:none}
 [data-theme="dark"] .nav-logo-img--dark{display:block}
@@ -80,6 +82,7 @@ background:var(--bg-nav);backdrop-filter:blur(12px);border-bottom:2px solid var(
 
 .btn-primary{display:inline-flex;align-items:center;gap:8px;padding:0.7rem 1.5rem;background:var(--btn-primary-bg);color:var(--btn-primary-text);border-radius:30px;font-family:'Outfit',sans-serif;font-size:13px;letter-spacing:0.5px;font-weight:600;transition:all .25s;border:none}
 .btn-primary:hover{background:var(--salmon-light);transform:translateY(-1px)}
+a.btn-primary.nav-signup,a.btn-primary.nav-signup:visited,a.btn-primary.nav-signup:hover,a.btn-primary.nav-signup:active{color:white!important}
 .btn-secondary{display:inline-flex;align-items:center;gap:8px;padding:0.7rem 1.5rem;background:var(--btn-secondary-bg);color:var(--btn-secondary-text);border:2px solid var(--btn-secondary-border);border-radius:30px;font-family:'Outfit',sans-serif;font-size:13px;letter-spacing:0.5px;font-weight:500;transition:all .25s}
 .btn-secondary:hover{background:var(--text);color:var(--bg)}
 
@@ -111,30 +114,75 @@ footer{position:absolute;bottom:0;left:0;right:0;padding:1.5rem 2rem;border-top:
 
 @media(max-width:768px){
 .nav-links{gap:0.75rem}
-.footer-inner{flex-direction:column;text-align:center}
+.nav-links .nav-link-github,
+.nav-links .theme-toggle,
+.nav-links .nav-signup{display:none!important}
 .hero-bg{width:90vw}
 .hero-tag{flex-wrap:wrap;justify-content:center}
 }
 </style>
 </head>
 <body>
+<!-- Inline sprite so nav logos render without external logo.svg fetch (file:// / some hosts) -->
+<svg xmlns="http://www.w3.org/2000/svg" style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true" focusable="false">
+<defs>
+<symbol id="justreheat-logo-light" viewBox="0 0 32 32">
+<rect x="1" y="5" width="30" height="21" rx="3.5" fill="#3D2B1A" stroke="#D47B8A" stroke-width="1.25"/>
+<rect x="3" y="7" width="26" height="17" rx="2.5" fill="#2A1C10"/>
+<rect x="5" y="9" width="15" height="13" rx="2" fill="#FFF8EC" stroke="#D47B8A" stroke-width="0.9"/>
+<rect x="6.5" y="10.5" width="12" height="10" rx="1.2" fill="rgba(245,213,184,0.3)"/>
+<g opacity="0.35"><line x1="7" y1="13" x2="18" y2="13" stroke="#6B5540" stroke-width="0.45"/><line x1="7" y1="16" x2="18" y2="16" stroke="#6B5540" stroke-width="0.45"/></g>
+<rect x="10" y="13" width="6" height="4.5" rx="1" fill="#D47B8A" fill-opacity="0.45" stroke="#B8687A" stroke-width="0.5"/>
+<rect x="22" y="9" width="7" height="13" rx="1.2" fill="#2A1C10" stroke="#6B5540" stroke-width="0.45"/>
+<circle cx="25.5" cy="12" r="2.4" fill="none" stroke="#D47B8A" stroke-width="0.85"/>
+<line x1="25.5" y1="12" x2="25.5" y2="10.2" stroke="#D47B8A" stroke-width="0.75" stroke-linecap="round"/>
+<circle cx="25.5" cy="12" r="0.9" fill="#D47B8A"/>
+<circle cx="25.5" cy="17.5" r="2.4" fill="none" stroke="#7A8C4A" stroke-width="0.85"/>
+<line x1="25.5" y1="17.5" x2="26.8" y2="16.3" stroke="#7A8C4A" stroke-width="0.75" stroke-linecap="round"/>
+<circle cx="25.5" cy="17.5" r="0.9" fill="#7A8C4A"/>
+<rect x="22.8" y="20.2" width="5.4" height="2.4" rx="1.2" fill="#D47B8A"/>
+<circle cx="25.5" cy="7.2" r="1" fill="#7A8C4A" fill-opacity="0.75"/>
+<rect x="6" y="25.5" width="5" height="1.4" rx="0.65" fill="#3D2B1A"/>
+<rect x="21" y="25.5" width="5" height="1.4" rx="0.65" fill="#3D2B1A"/>
+</symbol>
+<symbol id="justreheat-logo-dark" viewBox="0 0 32 32">
+<rect x="1" y="5" width="30" height="21" rx="3.5" fill="#FAF7F2" stroke="#D47B8A" stroke-width="1.25"/>
+<rect x="3" y="7" width="26" height="17" rx="2.5" fill="#F0E8DA"/>
+<rect x="5" y="9" width="15" height="13" rx="2" fill="#2A1E15" stroke="#D47B8A" stroke-width="0.9"/>
+<rect x="6.5" y="10.5" width="12" height="10" rx="1.2" fill="rgba(42,30,21,0.3)"/>
+<g opacity="0.35"><line x1="7" y1="13" x2="18" y2="13" stroke="rgba(250,247,242,0.35)" stroke-width="0.45"/><line x1="7" y1="16" x2="18" y2="16" stroke="rgba(250,247,242,0.35)" stroke-width="0.45"/></g>
+<rect x="10" y="13" width="6" height="4.5" rx="1" fill="#D47B8A" fill-opacity="0.45" stroke="#B8687A" stroke-width="0.5"/>
+<rect x="22" y="9" width="7" height="13" rx="1.2" fill="#F0E8DA" stroke="rgba(250,247,242,0.3)" stroke-width="0.45"/>
+<circle cx="25.5" cy="12" r="2.4" fill="none" stroke="#D47B8A" stroke-width="0.85"/>
+<line x1="25.5" y1="12" x2="25.5" y2="10.2" stroke="#D47B8A" stroke-width="0.75" stroke-linecap="round"/>
+<circle cx="25.5" cy="12" r="0.9" fill="#D47B8A"/>
+<circle cx="25.5" cy="17.5" r="2.4" fill="none" stroke="#7B9E6B" stroke-width="0.85"/>
+<line x1="25.5" y1="17.5" x2="26.8" y2="16.3" stroke="#7B9E6B" stroke-width="0.75" stroke-linecap="round"/>
+<circle cx="25.5" cy="17.5" r="0.9" fill="#7B9E6B"/>
+<rect x="22.8" y="20.2" width="5.4" height="2.4" rx="1.2" fill="#D47B8A"/>
+<circle cx="25.5" cy="7.2" r="1" fill="#7B9E6B" fill-opacity="0.75"/>
+<rect x="6" y="25.5" width="5" height="1.4" rx="0.65" fill="#FAF7F2"/>
+<rect x="21" y="25.5" width="5" height="1.4" rx="0.65" fill="#FAF7F2"/>
+</symbol>
+</defs>
+</svg>
 <div class="scanlines"></div>
 <div class="grain"></div>
 
 <nav>
 <div class="nav-left">
-<svg class="nav-logo-icon nav-logo-img nav-logo-img--light" width="32" height="32" aria-hidden="true" focusable="false"><use href="logo.svg#justreheat-logo-light"/></svg>
-<svg class="nav-logo-icon nav-logo-img nav-logo-img--dark" width="32" height="32" aria-hidden="true" focusable="false"><use href="logo.svg#justreheat-logo-dark"/></svg>
+<svg class="nav-logo-icon nav-logo-img nav-logo-img--light" viewBox="0 0 32 32" width="36" height="36" aria-hidden="true" focusable="false"><use href="#justreheat-logo-light"/></svg>
+<svg class="nav-logo-icon nav-logo-img nav-logo-img--dark" viewBox="0 0 32 32" width="36" height="36" aria-hidden="true" focusable="false"><use href="#justreheat-logo-dark"/></svg>
 <span class="nav-logo">JustReheat</span>
 </div>
 <div class="nav-links">
-<a href="https://github.com/Jity01/basis" target="_blank">github</a>
+<a href="https://github.com/Jity01/basis" class="nav-link-github" target="_blank" rel="noopener noreferrer">github</a>
 <span class="yc-badge"><span class="yc-icon">Y</span> S26</span>
 <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme">
 <span class="icon-sun">☀</span>
 <span class="icon-moon">☾</span>
 </button>
-<a href="https://forms.gle/pMGbBGzvqePoxRQ6A" class="btn-primary" style="padding:0.4rem 1.2rem;font-size:11px" target="_blank">sign up</a>
+<a href="https://forms.gle/pMGbBGzvqePoxRQ6A" class="btn-primary nav-signup" style="padding:0.4rem 1.2rem;font-size:11px" target="_blank" rel="noopener noreferrer">sign up</a>
 </div>
 </nav>
 
@@ -194,8 +242,7 @@ footer{position:absolute;bottom:0;left:0;right:0;padding:1.5rem 2rem;border-top:
 <div class="footer-inner">
 <div class="footer-brand">© 2026 JustReheat, Inc.</div>
 <div class="footer-links">
-<a href="https://github.com/Jity01/basis" target="_blank">github</a>
-<a href="https://www.linkedin.com/company/justreheat" target="_blank">linkedin</a>
+<a href="https://www.linkedin.com/company/justreheat" target="_blank" rel="noopener noreferrer">linkedin</a>
 </div>
 </div>
 </footer>
