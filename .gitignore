@@ -19,3 +19,5 @@ apps/desktop/resources/
 
 .cursor/skills/dot-context-filesystem/
 skills/dot-context-filesystem/
+
+.turbo/
