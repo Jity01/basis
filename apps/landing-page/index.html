@@ -7,6 +7,9 @@
 <title>JustReheat — screen context for your AI</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=DM+Serif+Display:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<!-- PostHog project token (POSTHOG_PROJECT_TOKEN in .env). For EU cloud, edit api_host in posthog-init.js. -->
+<script>window.__JR_POSTHOG_KEY__='phc_wTAMM825hr3CtVKXZaMkG7yMePSRuvko9cCWUbHWxFjh';</script>
+<script src="posthog-init.js" defer></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 
@@ -257,6 +260,20 @@ localStorage.setItem('justreheat-theme',next);
 }
 const saved=localStorage.getItem('justreheat-theme');
 if(saved)document.documentElement.setAttribute('data-theme',saved);
+
+document.addEventListener('DOMContentLoaded',function(){
+document.body.addEventListener('click',function(e){
+var a=e.target&&e.target.closest&&e.target.closest('a[href]');
+if(!a||!window.posthog)return;
+var href=a.getAttribute('href')||'';
+var label=(a.textContent||'').trim().slice(0,120);
+var section='body';
+if(a.closest('nav'))section='nav';
+else if(a.closest('.cta-group'))section='hero_cta';
+else if(a.closest('footer'))section='footer';
+posthog.capture('landing_link_click',{href:href,link_label:label,section:section});
+});
+});
 </script>
 </body>
 </html>
