@@ -22,3 +22,9 @@ skills/dot-context-filesystem/
 
 .turbo/
 .claude/
+
+# Wrangler local dev state (SQLite DBs, KV, R2, etc.)
+.wrangler/
+
+# Internal dev/test scripts
+tasks/
