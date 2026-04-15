@@ -1,284 +1,622 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="light">
+
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="description" content="screen context for your AI">
-<title>JustReheat — screen context for your AI</title>
-<link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=DM+Serif+Display:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<!-- PostHog project token (POSTHOG_PROJECT_TOKEN in .env). For EU cloud, edit api_host in posthog-init.js. -->
-<script>window.__JR_POSTHOG_KEY__='phc_wTAMM825hr3CtVKXZaMkG7yMePSRuvko9cCWUbHWxFjh';</script>
-<script src="posthog-init.js" defer></script>
+<title>vizlog</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'><ellipse cx='100' cy='100' rx='100' ry='100' fill='%238B5E3C'/><ellipse cx='100' cy='100' rx='88' ry='88' fill='%23A0722A'/><ellipse cx='100' cy='100' rx='74' ry='74' fill='%23C8964A'/><ellipse cx='100' cy='100' rx='58' ry='58' fill='%23D9A85C'/><ellipse cx='100' cy='100' rx='42' ry='42' fill='%23E8C07A'/><ellipse cx='100' cy='100' rx='26' ry='26' fill='%23F2D490'/><ellipse cx='68' cy='92' rx='16' ry='17' fill='white'/><ellipse cx='132' cy='92' rx='16' ry='17' fill='white'/><ellipse cx='68' cy='92' rx='10' ry='11' fill='%231a1a1a'/><ellipse cx='132' cy='92' rx='10' ry='11' fill='%231a1a1a'/><ellipse cx='71' cy='89' rx='4' ry='4' fill='white'/><ellipse cx='135' cy='89' rx='4' ry='4' fill='white'/><path d='M 76 118 Q 100 132 124 118' stroke='%237a5020' stroke-width='5' fill='none' stroke-linecap='round'/></svg>" type="image/svg+xml">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
 <style>
-*{margin:0;padding:0;box-sizing:border-box}
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root { --ink: #0f0e0d; --paper: #f5f2ed; --ring2: #A0722A; --ring3: #C8964A; --muted: #9a9590; --border: rgba(15,14,13,0.12); }
+  html { background: var(--paper); color: var(--ink); font-family: 'DM Sans', sans-serif; }
+  body { min-height: 100vh; display: flex; flex-direction: column; }
 
-/* ── LIGHT THEME (default) ── */
-:root, [data-theme="light"]{
---bg:#FFF8EC;--bg-nav:rgba(255,248,236,0.9);--text:#3D2B1A;--text-light:#6B5540;
---salmon:#D47B8A;--salmon-light:#E09BA8;--salmon-dark:#B8687A;
---avocado:#7A8C4A;--avocado-light:#9AAD6A;
---brown:#3D2B1A;--brown-light:#6B5540;--brown-dark:#2A1C10;
---peach:#F5D5B8;--cream:#FFF8EC;
---border-accent:var(--salmon);
---tag-bg:rgba(122,140,74,0.12);--tag-text:var(--avocado);
---btn-primary-bg:var(--salmon);--btn-primary-text:var(--cream);
---btn-secondary-bg:transparent;--btn-secondary-text:var(--brown);--btn-secondary-border:var(--brown);
---hero-glow:var(--peach);
---footer-text:var(--brown-light);
---micro-body:#3D2B1A;--micro-inner:#2A1C10;--micro-window:#FFF8EC;--micro-window-fill:rgba(245,213,184,0.3);
---micro-accent:var(--salmon);--micro-accent-dark:var(--salmon-dark);
---micro-dial-stroke:#6B5540;
+/* NAV */
+nav { display: flex; align-items: center; justify-content: space-between; padding: 1.1rem 3rem; border-bottom: 0.5px solid var(--border); background: var(--paper); }
+.nav-left { display: flex; align-items: center; gap: 1.5rem; }
+.nav-logo { display: flex; align-items: center; gap: 10px; text-decoration: none; }
+.nav-logo svg { width: 28px; height: 28px; }
+.nav-wordmark { font-family: 'DM Mono', monospace; font-size: 16px; font-weight: 500; color: var(--ink); }
+.nav-tags { display: flex; gap: 6px; }
+.nav-tag { font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.06em; color: var(--muted); border: 0.5px solid var(--border); border-radius: 2px; padding: 2px 7px; opacity: 0; animation: fade-up 0.5s forwards; }
+.nav-tag:nth-child(1) { animation-delay: 0.2s; }
+.nav-tag:nth-child(2) { animation-delay: 0.35s; }
+.nav-tag:nth-child(3) { animation-delay: 0.5s; }
+.nav-links { display: flex; gap: 2rem; }
+.nav-links a { font-family: 'DM Mono', monospace; font-size: 12px; color: var(--muted); text-decoration: none; letter-spacing: 0.04em; }
+.nav-links a:hover { color: var(--ink); }
+
+/* ANNOUNCE */
+.announce-bar { display: flex; align-items: center; justify-content: center; gap: 0.6rem; padding: 0.55rem 1rem; background: var(--ink); color: var(--paper); font-family: 'DM Mono', monospace; font-size: 11px; letter-spacing: 0.04em; }
+.announce-dot { width: 5px; height: 5px; border-radius: 50%; background: #7faa45; animation: pulse 2s infinite; flex-shrink: 0; }
+.announce-bar a { color: var(--ring3); text-decoration: none; font-weight: 500; }
+.announce-bar a:hover { text-decoration: underline; }
+
+/* SPLIT */
+.split { display: grid; grid-template-columns: 1fr 1fr; flex: 1; border-bottom: 0.5px solid var(--border); max-width: 1200px; margin: 0 auto; width: 100%; }
+
+/* HERO */
+.hero { display: flex; flex-direction: column; justify-content: center; padding: 3.5rem 4rem; border-right: 0.5px solid var(--border); }
+.hero h1 { font-size: clamp(2rem, 2.8vw, 3.4rem); font-weight: 300; line-height: 1.05; letter-spacing: -0.03em; opacity: 0; animation: fade-up 0.6s 0.15s forwards; }
+.hero h1 em { font-style: italic; color: var(--ring2); }
+.hero-sub { margin-top: 1.25rem; font-size: 0.875rem; color: var(--muted); max-width: 340px; line-height: 1.75; font-weight: 300; opacity: 0; animation: fade-up 0.6s 0.25s forwards; }
+.hero-cta { margin-top: 2rem; display: flex; gap: 1rem; align-items: center; opacity: 0; animation: fade-up 0.6s 0.35s forwards; }
+.hero-rings { display: flex; gap: 5px; margin-top: 3.5rem; opacity: 0; animation: fade-up 0.6s 0.5s forwards; }
+.hero-rings span { display: block; width: 7px; height: 7px; border-radius: 50%; }
+.btn-primary { font-family: 'DM Mono', monospace; font-size: 12px; letter-spacing: 0.05em; padding: 0.7rem 1.5rem; background: var(--ink); color: var(--paper); border: none; cursor: pointer; border-radius: 2px; transition: opacity 0.15s; text-decoration: none; display: inline-block; }
+.btn-primary:hover { opacity: 0.8; }
+.btn-ghost { font-family: 'DM Mono', monospace; font-size: 12px; letter-spacing: 0.05em; padding: 0.7rem 1.5rem; background: transparent; color: var(--muted); border: 0.5px solid var(--border); cursor: pointer; border-radius: 2px; transition: color 0.15s, border-color 0.15s; text-decoration: none; }
+.btn-ghost:hover { color: var(--ink); border-color: var(--ink); }
+
+/* DEMO */
+.demo-section { display: flex; flex-direction: column; justify-content: center; padding: 2.5rem; background: white; opacity: 0; animation: fade-up 0.6s 0.25s forwards; }
+.demo-label { font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.12em; color: var(--muted); text-transform: uppercase; margin-bottom: 0.75rem; display: flex; align-items: center; gap: 7px; }
+.demo-label::before { content: ''; display: block; width: 5px; height: 5px; border-radius: 50%; background: var(--ring3); animation: pulse 2s infinite; }
+.demo-box { border: 0.5px solid var(--border); border-radius: 4px; overflow: hidden; display: flex; flex-direction: column; height: 420px; background: white; }
+.demo-toolbar { display: flex; align-items: center; gap: 8px; padding: 0.6rem 1rem; border-bottom: 0.5px solid var(--border); background: var(--paper); flex-shrink: 0; }
+.demo-dot { width: 7px; height: 7px; border-radius: 50%; }
+.demo-title { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--muted); flex: 1; text-align: center; letter-spacing: 0.05em; }
+.demo-client-tabs { display: flex; gap: 0; flex: 1; justify-content: center; }
+.demo-client { font-family: 'DM Mono', monospace; font-size: 10px; padding: 0.3rem 0.8rem; background: none; border: none; color: var(--muted); cursor: pointer; border-radius: 2px; letter-spacing: 0.04em; }
+.demo-client.active { background: var(--ink); color: var(--paper); }
+.demo-body { padding: 1.1rem; flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 0.9rem; }
+.msg { display: flex; gap: 9px; align-items: flex-start; opacity: 0; }
+.msg.visible { animation: fade-up 0.4s forwards; }
+.msg-avatar { width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-family: 'DM Mono', monospace; font-size: 8px; font-weight: 500; }
+.msg-avatar.user { background: var(--ink); color: var(--paper); }
+.msg-avatar.ai { background: none; border: 0.5px solid var(--border); overflow: hidden; padding: 0; }
+.msg-avatar.ai svg { width: 24px; height: 24px; }
+.msg-bubble { font-size: 13px; line-height: 1.65; color: var(--ink); font-weight: 300; }
+.msg-bubble.user { color: var(--muted); font-family: 'DM Mono', monospace; font-size: 12px; }
+.msg-client-badge { font-family: 'DM Mono', monospace; font-size: 9px; letter-spacing: 0.06em; padding: 2px 6px; border-radius: 2px; background: var(--paper); border: 0.5px solid var(--border); color: var(--muted); margin-bottom: 4px; display: inline-block; }
+.thinking { display: none; align-items: center; gap: 6px; padding: 0 1.1rem 0.6rem; font-family: 'DM Mono', monospace; font-size: 10px; color: var(--muted); }
+.thinking.active { display: flex; }
+.dot-anim { display: flex; gap: 3px; }
+.dot-anim span { width: 3px; height: 3px; border-radius: 50%; background: var(--muted); animation: bounce 1.2s infinite; }
+.dot-anim span:nth-child(2) { animation-delay: 0.2s; }
+.dot-anim span:nth-child(3) { animation-delay: 0.4s; }
+
+/* LOG DIVIDER */
+.log-divider { position: relative; height: 100px; border-top: 0.5px solid var(--border); border-bottom: 0.5px solid var(--border); overflow: hidden; }
+.log-track { position: absolute; top: 50%; left: 0; right: 0; height: 0.5px; background: var(--border); }
+.log-grass { position: absolute; bottom: 0; left: 0; right: 0; height: 44px; }
+.log-ground { position: absolute; bottom: 0; left: 0; right: 0; height: 22px; background: #5a7a2e; }
+.log-roller { position: absolute; width: 56px; height: 56px; will-change: transform; }
+
+/* VIDEO */
+.video-section { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 4rem 3rem; border-bottom: 0.5px solid var(--border); }
+
+/* QUOTES */
+.quotes-section { padding: 4rem 3rem; border-bottom: 0.5px solid var(--border); }
+.quotes-section .section-eyebrow { margin-bottom: 2.5rem; }
+.quotes-list { max-width: 740px; margin: 0 auto; display: flex; flex-direction: column; position: relative; }
+.quote-item { display: flex; gap: 1.25rem; align-items: flex-start; padding: 1.5rem 0; border-bottom: 0.5px solid var(--border); }
+.quote-item:last-child { border-bottom: none; }
+.quote-mark { font-family: Georgia, serif; font-size: 2.5rem; line-height: 1; color: #C8964A; flex-shrink: 0; margin-top: -4px; }
+.quote-text { font-size: 15px; line-height: 1.75; font-weight: 300; color: var(--ink); margin-bottom: 0.5rem; }
+.quote-who { font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.1em; color: var(--muted); }
+
+/* HOW IT WORKS */
+.section { max-width: 1200px; margin: 0 auto; width: 100%; padding: 4rem 3rem; }
+.section-eyebrow { font-family: 'DM Mono', monospace; font-size: 11px; letter-spacing: 0.12em; color: var(--muted); text-transform: uppercase; margin-bottom: 1.5rem; }
+.section h2 { font-size: clamp(1.6rem, 2.5vw, 2.4rem); font-weight: 300; letter-spacing: -0.02em; line-height: 1.15; margin-bottom: 0.75rem; max-width: 560px; }
+.section h2 em { font-style: italic; color: var(--ring2); }
+.how-section { background: #eee9e0; border-top: 0.5px solid var(--border); border-bottom: 0.5px solid var(--border); overflow: hidden; }
+.has-leaves { position: relative; overflow: visible; }
+.section-leaves { position: absolute; left: -40px; top: 0; bottom: 0; width: 80px; pointer-events: none; z-index: 1; }
+.section-leaf { position: absolute; left: -4px; opacity: 0.45; }
+.section-leaf svg { display: block; }
+.section-leaf:nth-child(1) { top: 4%; transform: rotate(-20deg); }
+.section-leaf:nth-child(2) { top: 14%; transform: rotate(15deg) scaleX(-1); left: 8px; }
+.section-leaf:nth-child(3) { top: 24%; transform: rotate(-35deg); }
+.section-leaf:nth-child(4) { top: 34%; transform: rotate(10deg) scaleX(-1); left: 12px; }
+.section-leaf:nth-child(5) { top: 44%; transform: rotate(-15deg); }
+.section-leaf:nth-child(6) { top: 54%; transform: rotate(25deg) scaleX(-1); left: 6px; }
+.section-leaf:nth-child(7) { top: 64%; transform: rotate(-30deg); left: 2px; }
+.section-leaf:nth-child(8) { top: 74%; transform: rotate(12deg) scaleX(-1); left: 10px; }
+.section-leaf:nth-child(9) { top: 84%; transform: rotate(-22deg); }
+.section-leaf:nth-child(10) { top: 93%; transform: rotate(18deg) scaleX(-1); left: 4px; }
+.quotes-section { position: relative; overflow: hidden; }
+.log-timeline { display: flex; gap: 0; align-items: stretch; margin-top: 2.5rem; max-width: 600px; margin-left: auto; margin-right: auto; position: relative; }
+.log-trunk-col { width: 60px; flex-shrink: 0; }
+.log-timeline-steps { flex: 1; display: flex; flex-direction: column; }
+.log-timeline-step { flex: 1; display: flex; align-items: center; padding: 2.5rem 0; border-bottom: 0.5px solid rgba(139,94,60,0.15); }
+.log-timeline-step:last-child { border-bottom: none; }
+.log-step-line { width: 40px; flex-shrink: 0; height: 0.5px; background: #A0722A; opacity: 0.5; }
+.log-step-content { padding-left: 1.25rem; }
+.pipeline-num { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--muted); letter-spacing: 0.1em; margin-bottom: 0.25rem; }
+.pipeline-name { font-size: 15px; font-weight: 500; margin-bottom: 0.4rem; }
+.pipeline-body { font-size: 14px; color: var(--muted); line-height: 1.75; font-weight: 300; max-width: 480px; }
+
+/* MEMORY */
+.memory-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--border); border: 0.5px solid var(--border); border-radius: 4px; overflow: hidden; margin-top: 2rem; }
+.memory-card { background: white; padding: 1.5rem; }
+.memory-card-label { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--muted); letter-spacing: 0.1em; margin-bottom: 0.75rem; }
+.memory-card-num { font-size: 2rem; font-weight: 300; letter-spacing: -0.03em; color: var(--ink); line-height: 1; margin-bottom: 0.4rem; }
+.memory-card-num em { font-style: italic; color: var(--ring2); }
+.memory-card-sub { font-size: 12px; color: var(--muted); line-height: 1.6; font-weight: 300; }
+
+/* FOOTER */
+footer { border-top: 0.5px solid var(--border); padding: 1.1rem 3rem; display: flex; justify-content: space-between; align-items: center; }
+footer span { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--muted); }
+
+@keyframes fade-up { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+@keyframes bounce { 0%, 80%, 100% { transform: translateY(0); } 40% { transform: translateY(-4px); } }
+@keyframes bob { 0%,100%{transform:translateY(0)} 50%{transform:translateY(3px)} }
+
+@media (max-width: 860px) {
+.split { grid-template-columns: 1fr; }
+.hero { border-right: none; border-bottom: 0.5px solid var(--border); padding: 2.5rem 1.5rem; }
+.demo-section { padding: 1.5rem; }
+.demo-box { height: 360px; }
+.demo-client { font-size: 9px; padding: 0.25rem 0.5rem; }
+.memory-grid { grid-template-columns: 1fr; }
+.nav-tags { display: none; }
+.section { padding: 2.5rem 1.5rem; }
+.quotes-section { padding: 2.5rem 1.5rem; }
+.log-divider { height: 70px; }
+.log-roller { width: 40px; height: 40px; }
+.log-timeline { max-width: 100%; }
+.log-trunk-col { width: 44px; }
+.section-leaves { display: none; }
+.video-section { padding: 2rem 1.5rem; }
+.quote-item { gap: 0.75rem; }
+.quote-mark { font-size: 2rem; }
 }
 
-/* ── DARK THEME ── */
-[data-theme="dark"]{
---bg:#140C08;--bg-nav:rgba(20,12,8,0.9);--text:#FAF7F2;--text-light:#C4A882;
---salmon:#D47B8A;--salmon-light:#E09BA8;--salmon-dark:#B8687A;
---avocado:#7B9E6B;--avocado-light:#8FB47A;
---brown:#FAF7F2;--brown-light:#C4A882;--brown-dark:#0A0604;
---peach:#2A1C10;--cream:#FAF7F2;
---border-accent:rgba(250,247,242,0.1);
---tag-bg:rgba(123,158,107,0.15);--tag-text:var(--avocado);
---btn-primary-bg:var(--salmon);--btn-primary-text:#FFF8EC;
---btn-secondary-bg:transparent;--btn-secondary-text:var(--cream);--btn-secondary-border:rgba(250,247,242,0.2);
---hero-glow:rgba(212,123,138,0.06);
---footer-text:#C4A882;
---micro-body:#FAF7F2;--micro-inner:#F0E8DA;--micro-window:#2A1E15;--micro-window-fill:rgba(42,30,21,0.3);
---micro-accent:var(--salmon);--micro-accent-dark:var(--salmon-dark);
---micro-dial-stroke:rgba(250,247,242,0.3);
+@media (max-width: 640px) {
+nav { padding: 1rem 1.25rem; }
+.nav-links { gap: 0.75rem; }
+.nav-links a { font-size: 10px; }
+.nav-links a[href="#how"] { display: none; }
+.announce-bar { font-size: 10px; padding: 0.5rem 1rem; gap: 0.4rem; }
+footer { padding: 1.25rem 1.25rem; flex-direction: column; gap: 1rem; align-items: center; text-align: center; }
+footer span { font-size: 10px; }
 }
 
-html{scroll-behavior:smooth}
-body{background:var(--bg);color:var(--text);font-family:'Outfit',sans-serif;line-height:1.7;overflow-x:hidden;min-height:100vh;position:relative;transition:background .4s,color .4s}
-a{color:inherit;text-decoration:none}
-
-.scanlines{position:fixed;inset:0;pointer-events:none;z-index:998;opacity:0.03;
-background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.1) 2px,rgba(0,0,0,0.1) 4px)}
-.grain{position:fixed;inset:0;pointer-events:none;z-index:999;opacity:.03;
-background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-background-repeat:repeat;background-size:256px 256px}
-
-nav{position:fixed;top:0;left:0;right:0;z-index:100;padding:1rem 2rem;display:flex;align-items:center;justify-content:space-between;
-background:var(--bg-nav);backdrop-filter:blur(12px);border-bottom:2px solid var(--border-accent);transition:background .4s,border-color .4s}
-.nav-left{display:flex;align-items:center;gap:10px}
-.nav-logo-icon{display:block;flex-shrink:0;width:36px;height:36px;vertical-align:middle;
-filter:drop-shadow(0 1px 2px rgba(61,43,26,0.12))}
-[data-theme="dark"] .nav-logo-icon{filter:drop-shadow(0 1px 3px rgba(0,0,0,0.35))}
-.nav-logo-img--dark{display:none}
-[data-theme="dark"] .nav-logo-img--light{display:none}
-[data-theme="dark"] .nav-logo-img--dark{display:block}
-.nav-logo{font-family:'DM Serif Display',serif;font-size:20px;color:var(--text);font-weight:400;transition:color .4s}
-.nav-links{display:flex;gap:1.5rem;align-items:center}
-.nav-links a{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:1px;color:var(--text-light);transition:color .2s;text-transform:uppercase}
-.nav-links a:hover{color:var(--text)}
-.yc-badge{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border:2px solid #F26522;border-radius:20px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#F26522;letter-spacing:1px;font-weight:500}
-.yc-badge .yc-icon{width:14px;height:14px;background:#F26522;color:#FFF8EC;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;font-weight:700;font-size:9px}
-
-/* ── THEME TOGGLE ── */
-.theme-toggle{width:44px;height:24px;border-radius:12px;background:var(--salmon);border:none;cursor:pointer;position:relative;transition:background .3s;flex-shrink:0}
-.theme-toggle::after{content:'';position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#FFF8EC;transition:transform .3s;box-shadow:0 1px 3px rgba(0,0,0,0.2)}
-[data-theme="dark"] .theme-toggle::after{transform:translateX(20px)}
-.theme-toggle .icon-sun,.theme-toggle .icon-moon{position:absolute;top:50%;transform:translateY(-50%);font-size:11px;line-height:1}
-.theme-toggle .icon-sun{left:5px}
-.theme-toggle .icon-moon{right:5px}
-
-.btn-primary{display:inline-flex;align-items:center;gap:8px;padding:0.7rem 1.5rem;background:var(--btn-primary-bg);color:var(--btn-primary-text);border-radius:30px;font-family:'Outfit',sans-serif;font-size:13px;letter-spacing:0.5px;font-weight:600;transition:all .25s;border:none}
-.btn-primary:hover{background:var(--salmon-light);transform:translateY(-1px)}
-a.btn-primary.nav-signup,a.btn-primary.nav-signup:visited,a.btn-primary.nav-signup:hover,a.btn-primary.nav-signup:active{color:white!important}
-.btn-secondary{display:inline-flex;align-items:center;gap:8px;padding:0.7rem 1.5rem;background:var(--btn-secondary-bg);color:var(--btn-secondary-text);border:2px solid var(--btn-secondary-border);border-radius:30px;font-family:'Outfit',sans-serif;font-size:13px;letter-spacing:0.5px;font-weight:500;transition:all .25s}
-.btn-secondary:hover{background:var(--text);color:var(--bg)}
-
-.hero{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:8rem 2rem 8rem;position:relative;overflow:hidden;
-background:radial-gradient(ellipse 120% 80% at 50% 40%, var(--hero-glow) 0%, var(--bg) 60%);transition:background .4s}
-
-.hero-bg{position:absolute;top:50%;left:50%;transform:translate(-50%,-46%);width:min(550px,80vw);opacity:0.07;pointer-events:none;z-index:0;animation:spin3d 8s linear infinite}
-@keyframes spin3d{from{transform:translate(-50%,-46%) perspective(800px) rotateY(0deg)}to{transform:translate(-50%,-46%) perspective(800px) rotateY(360deg)}}
-
-.hero>*:not(.hero-bg){position:relative;z-index:1}
-
-.hero-tag{display:inline-flex;gap:0.75rem;align-items:center;margin-bottom:2rem}
-.hero-tag span{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:1.5px;color:var(--tag-text);text-transform:uppercase;font-weight:500;background:var(--tag-bg);padding:4px 12px;border-radius:20px;transition:background .4s,color .4s}
-
-.hero h1{font-family:'DM Serif Display',serif;font-size:clamp(2.5rem,5.5vw,4rem);font-weight:400;line-height:1.2;max-width:750px;margin-bottom:1.5rem;color:var(--text);transition:color .4s}
-.hero h1 .highlight{color:var(--salmon);font-style:italic}
-.hero h1 .brand{color:var(--avocado)}
-
-.hero .sub{font-size:clamp(0.95rem,1.8vw,1.1rem);color:var(--text-light);max-width:520px;margin:0 auto 2.5rem;line-height:1.8;font-weight:300;transition:color .4s}
-
-.cta-group{display:flex;gap:1rem;align-items:center;flex-wrap:wrap;justify-content:center}
-
-footer{position:absolute;bottom:0;left:0;right:0;padding:1.5rem 2rem;border-top:2px solid var(--border-accent);transition:border-color .4s}
-.footer-inner{max-width:820px;margin:0 auto;display:flex;justify-content:space-between;align-items:center;flex-wrap:nowrap;gap:1rem}
-.footer-brand{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--footer-text);letter-spacing:0.5px;font-weight:400;transition:color .4s}
-.footer-links{display:flex;gap:1.5rem}
-.footer-links a{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--footer-text);letter-spacing:0.5px;transition:color .2s}
-.footer-links a:hover{color:var(--text)}
-
-@media(max-width:768px){
-.nav-links{gap:0.75rem}
-.nav-links .nav-link-github,
-.nav-links .theme-toggle,
-.nav-links .nav-signup{display:none!important}
-.footer-links .footer-link-github,
-.footer-links .footer-link-twitter{display:none!important}
-.hero-bg{width:90vw}
-.hero-tag{flex-wrap:wrap;justify-content:center}
+@media (max-width: 480px) {
+.hero h1 { font-size: 2.2rem; }
+.hero-sub { font-size: 0.8rem; }
+.hero-cta { flex-direction: column; align-items: stretch; }
+.btn-primary, .btn-ghost { width: 100%; text-align: center; }
+.demo-client-tabs { gap: 0; }
+.pipeline-body { font-size: 13px; }
+.memory-card-num { font-size: 1.6rem; }
 }
 </style>
+
 </head>
 <body>
-<!-- Inline sprite so nav logos render without external logo.svg fetch (file:// / some hosts) -->
-<svg xmlns="http://www.w3.org/2000/svg" style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true" focusable="false">
-<defs>
-<symbol id="justreheat-logo-light" viewBox="0 0 32 32">
-<rect x="1" y="5" width="30" height="21" rx="3.5" fill="#3D2B1A" stroke="#D47B8A" stroke-width="1.25"/>
-<rect x="3" y="7" width="26" height="17" rx="2.5" fill="#2A1C10"/>
-<rect x="5" y="9" width="15" height="13" rx="2" fill="#FFF8EC" stroke="#D47B8A" stroke-width="0.9"/>
-<rect x="6.5" y="10.5" width="12" height="10" rx="1.2" fill="rgba(245,213,184,0.3)"/>
-<g opacity="0.35"><line x1="7" y1="13" x2="18" y2="13" stroke="#6B5540" stroke-width="0.45"/><line x1="7" y1="16" x2="18" y2="16" stroke="#6B5540" stroke-width="0.45"/></g>
-<rect x="10" y="13" width="6" height="4.5" rx="1" fill="#D47B8A" fill-opacity="0.45" stroke="#B8687A" stroke-width="0.5"/>
-<rect x="22" y="9" width="7" height="13" rx="1.2" fill="#2A1C10" stroke="#6B5540" stroke-width="0.45"/>
-<circle cx="25.5" cy="12" r="2.4" fill="none" stroke="#D47B8A" stroke-width="0.85"/>
-<line x1="25.5" y1="12" x2="25.5" y2="10.2" stroke="#D47B8A" stroke-width="0.75" stroke-linecap="round"/>
-<circle cx="25.5" cy="12" r="0.9" fill="#D47B8A"/>
-<circle cx="25.5" cy="17.5" r="2.4" fill="none" stroke="#7A8C4A" stroke-width="0.85"/>
-<line x1="25.5" y1="17.5" x2="26.8" y2="16.3" stroke="#7A8C4A" stroke-width="0.75" stroke-linecap="round"/>
-<circle cx="25.5" cy="17.5" r="0.9" fill="#7A8C4A"/>
-<rect x="22.8" y="20.2" width="5.4" height="2.4" rx="1.2" fill="#D47B8A"/>
-<circle cx="25.5" cy="7.2" r="1" fill="#7A8C4A" fill-opacity="0.75"/>
-<rect x="6" y="25.5" width="5" height="1.4" rx="0.65" fill="#3D2B1A"/>
-<rect x="21" y="25.5" width="5" height="1.4" rx="0.65" fill="#3D2B1A"/>
-</symbol>
-<symbol id="justreheat-logo-dark" viewBox="0 0 32 32">
-<rect x="1" y="5" width="30" height="21" rx="3.5" fill="#FAF7F2" stroke="#D47B8A" stroke-width="1.25"/>
-<rect x="3" y="7" width="26" height="17" rx="2.5" fill="#F0E8DA"/>
-<rect x="5" y="9" width="15" height="13" rx="2" fill="#2A1E15" stroke="#D47B8A" stroke-width="0.9"/>
-<rect x="6.5" y="10.5" width="12" height="10" rx="1.2" fill="rgba(42,30,21,0.3)"/>
-<g opacity="0.35"><line x1="7" y1="13" x2="18" y2="13" stroke="rgba(250,247,242,0.35)" stroke-width="0.45"/><line x1="7" y1="16" x2="18" y2="16" stroke="rgba(250,247,242,0.35)" stroke-width="0.45"/></g>
-<rect x="10" y="13" width="6" height="4.5" rx="1" fill="#D47B8A" fill-opacity="0.45" stroke="#B8687A" stroke-width="0.5"/>
-<rect x="22" y="9" width="7" height="13" rx="1.2" fill="#F0E8DA" stroke="rgba(250,247,242,0.3)" stroke-width="0.45"/>
-<circle cx="25.5" cy="12" r="2.4" fill="none" stroke="#D47B8A" stroke-width="0.85"/>
-<line x1="25.5" y1="12" x2="25.5" y2="10.2" stroke="#D47B8A" stroke-width="0.75" stroke-linecap="round"/>
-<circle cx="25.5" cy="12" r="0.9" fill="#D47B8A"/>
-<circle cx="25.5" cy="17.5" r="2.4" fill="none" stroke="#7B9E6B" stroke-width="0.85"/>
-<line x1="25.5" y1="17.5" x2="26.8" y2="16.3" stroke="#7B9E6B" stroke-width="0.75" stroke-linecap="round"/>
-<circle cx="25.5" cy="17.5" r="0.9" fill="#7B9E6B"/>
-<rect x="22.8" y="20.2" width="5.4" height="2.4" rx="1.2" fill="#D47B8A"/>
-<circle cx="25.5" cy="7.2" r="1" fill="#7B9E6B" fill-opacity="0.75"/>
-<rect x="6" y="25.5" width="5" height="1.4" rx="0.65" fill="#FAF7F2"/>
-<rect x="21" y="25.5" width="5" height="1.4" rx="0.65" fill="#FAF7F2"/>
-</symbol>
-</defs>
-</svg>
-<div class="scanlines"></div>
-<div class="grain"></div>
 
 <nav>
-<div class="nav-left">
-<svg class="nav-logo-icon nav-logo-img nav-logo-img--light" viewBox="0 0 32 32" width="36" height="36" aria-hidden="true" focusable="false"><use href="#justreheat-logo-light"/></svg>
-<svg class="nav-logo-icon nav-logo-img nav-logo-img--dark" viewBox="0 0 32 32" width="36" height="36" aria-hidden="true" focusable="false"><use href="#justreheat-logo-dark"/></svg>
-<span class="nav-logo">JustReheat</span>
-</div>
-<div class="nav-links">
-<a href="https://github.com/Jity01/basis" class="nav-link-github" target="_blank" rel="noopener noreferrer">github</a>
-<span class="yc-badge"><span class="yc-icon">Y</span> S26</span>
-<button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme">
-<span class="icon-sun">☀</span>
-<span class="icon-moon">☾</span>
-</button>
-<a href="https://forms.gle/pMGbBGzvqePoxRQ6A" class="btn-primary nav-signup" style="padding:0.4rem 1.2rem;font-size:11px" target="_blank" rel="noopener noreferrer">sign up</a>
-</div>
+  <div class="nav-left">
+    <a class="nav-logo" href="#">
+      <svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+        <ellipse cx="100" cy="100" rx="100" ry="100" fill="#8B5E3C"/>
+        <ellipse cx="100" cy="100" rx="88" ry="88" fill="#A0722A"/>
+        <ellipse cx="100" cy="100" rx="74" ry="74" fill="#C8964A"/>
+        <ellipse cx="100" cy="100" rx="58" ry="58" fill="#D9A85C"/>
+        <ellipse cx="100" cy="100" rx="42" ry="42" fill="#E8C07A"/>
+        <ellipse cx="100" cy="100" rx="26" ry="26" fill="#F2D490"/>
+        <ellipse cx="68" cy="92" rx="16" ry="17" fill="white"/>
+        <ellipse cx="132" cy="92" rx="16" ry="17" fill="white"/>
+        <ellipse cx="68" cy="92" rx="10" ry="11" fill="#1a1a1a"/>
+        <ellipse cx="132" cy="92" rx="10" ry="11" fill="#1a1a1a"/>
+        <ellipse cx="71" cy="89" rx="4" ry="4" fill="white"/>
+        <ellipse cx="135" cy="89" rx="4" ry="4" fill="white"/>
+        <path d="M 76 118 Q 100 132 124 118" stroke="#7a5020" stroke-width="5" fill="none" stroke-linecap="round"/>
+      </svg>
+      <span class="nav-wordmark">vizlog</span>
+    </a>
+    <div class="nav-tags">
+      <span class="nav-tag">memory efficient</span>
+      <span class="nav-tag">local-first</span>
+      <span class="nav-tag">mcp-native</span>
+    </div>
+  </div>
+  <div class="nav-links">
+    <a href="https://ycombinator.com" style="font-family:'DM Mono',monospace;font-size:10px;letter-spacing:0.06em;padding:3px 8px;border:none;border-radius:2px;background:#e07020;color:white;text-decoration:none;">YC S26</a>
+    <a href="#how">how it works</a>
+    <a href="https://cal.com/vizlog">get started</a>
+  </div>
 </nav>
 
-<section class="hero">
-<svg class="hero-bg" viewBox="0 0 450 340" fill="none" xmlns="http://www.w3.org/2000/svg">
-<rect x="0" y="0" width="450" height="280" rx="28" fill="var(--micro-body)" stroke="var(--micro-accent)" stroke-width="2.5"/>
-<rect x="8" y="8" width="434" height="264" rx="22" fill="var(--micro-inner)"/>
-<rect x="25" y="25" width="280" height="215" rx="14" fill="var(--micro-window)" stroke="var(--micro-accent)" stroke-width="1.5"/>
-<rect x="32" y="32" width="266" height="201" rx="10" fill="var(--micro-window-fill)"/>
-<g opacity="0.2">
-<line x1="32" y1="70" x2="298" y2="70" stroke="var(--micro-dial-stroke)" stroke-width="0.5"/>
-<line x1="32" y1="110" x2="298" y2="110" stroke="var(--micro-dial-stroke)" stroke-width="0.5"/>
-<line x1="32" y1="150" x2="298" y2="150" stroke="var(--micro-dial-stroke)" stroke-width="0.5"/>
-<line x1="32" y1="190" x2="298" y2="190" stroke="var(--micro-dial-stroke)" stroke-width="0.5"/>
-</g>
-<g opacity="0.35">
-<path d="M140,95 Q138,72 145,55 Q152,38 148,22" fill="none" stroke="var(--micro-accent)" stroke-width="2.5" stroke-linecap="round"/>
-<path d="M165,100 Q167,78 163,62 Q159,46 165,30" fill="none" stroke="var(--micro-accent)" stroke-width="2.5" stroke-linecap="round"/>
-<path d="M190,95 Q188,74 193,58 Q198,42 194,26" fill="none" stroke="var(--micro-accent)" stroke-width="2.5" stroke-linecap="round"/>
-</g>
-<g transform="translate(165,140)">
-<rect x="-28" y="-20" width="56" height="44" rx="6" fill="var(--micro-accent)" opacity="0.4" stroke="var(--micro-accent-dark)" stroke-width="1"/>
-<text x="0" y="7" text-anchor="middle" font-family="monospace" font-size="11" fill="var(--micro-body)" font-weight="600" opacity="0.6">ctx</text>
-</g>
-<rect x="325" y="25" width="95" height="215" rx="10" fill="var(--micro-inner)" stroke="var(--micro-dial-stroke)" stroke-width="0.5"/>
-<circle cx="372" cy="70" r="26" fill="none" stroke="var(--micro-accent)" stroke-width="2"/>
-<circle cx="372" cy="70" r="20" fill="none" stroke="var(--micro-dial-stroke)" stroke-width="0.8"/>
-<line x1="372" y1="70" x2="372" y2="54" stroke="var(--micro-accent)" stroke-width="2" stroke-linecap="round"/>
-<circle cx="372" cy="70" r="3" fill="var(--micro-accent)"/>
-<circle cx="372" cy="140" r="26" fill="none" stroke="var(--avocado)" stroke-width="2"/>
-<circle cx="372" cy="140" r="20" fill="none" stroke="var(--micro-dial-stroke)" stroke-width="0.8"/>
-<line x1="372" y1="140" x2="382" y2="130" stroke="var(--avocado)" stroke-width="2" stroke-linecap="round"/>
-<circle cx="372" cy="140" r="3" fill="var(--avocado)"/>
-<rect x="347" y="185" width="50" height="22" rx="11" fill="var(--salmon)"/>
-<text x="372" y="200" text-anchor="middle" font-family="sans-serif" font-size="9" fill="#FFF8EC" font-weight="700" letter-spacing="1">REHEAT</text>
-<circle cx="372" cy="46" r="4" fill="var(--avocado)" opacity="0.7"/>
-<rect x="25" y="250" width="395" height="14" rx="4" fill="var(--micro-inner)" stroke="var(--micro-dial-stroke)" stroke-width="0.5"/>
-<rect x="55" y="282" width="70" height="10" rx="5" fill="var(--micro-body)"/>
-<rect x="325" y="282" width="70" height="10" rx="5" fill="var(--micro-body)"/>
-</svg>
-
-<div class="hero-tag">
-<span>open source</span>
-<span>private</span>
-<span>local</span>
+<div class="announce-bar">
+  <span class="announce-dot"></span>
+  <span>we're open source!</span>
+  <a href="https://github.com/vizlog" target="_blank" rel="noopener">view our github &rarr;</a>
 </div>
 
-<h1>Stop serving your AI <span class="highlight">cold context.</span> Just reheat it.</h1>
-<p class="sub">JustReheat records your screen, summarizes what you do, and organizes it all into a local filesystem that any AI model or agent can search. You never have to explain yourself twice.</p>
-<div class="cta-group">
-<a href="https://forms.gle/pMGbBGzvqePoxRQ6A" class="btn-primary" target="_blank">sign up for early access</a>
-<a href="https://github.com/Jity01/basis" class="btn-secondary" target="_blank">view on github</a>
+<div class="split">
+  <div class="hero">
+    <h1>your screen data,<br><em>visible</em> to AI</h1>
+    <p class="hero-sub">vizlog watches your screen, turns what you see into searchable text on your machine, and lets any AI model access it through MCP.</p>
+    <div class="hero-cta">
+      <a href="https://cal.com/vizlog" class="btn-primary">get started</a>
+      <a href="#demo-video" class="btn-ghost">see in action</a>
+    </div>
+  </div>
+
+  <div class="demo-section">
+    <div class="demo-label">illustration</div>
+    <div class="demo-box">
+      <div class="demo-toolbar">
+        <div class="demo-dot" style="background:#E8C07A"></div>
+        <div class="demo-dot" style="background:#C8964A"></div>
+        <div class="demo-dot" style="background:#8B5E3C"></div>
+        <div class="demo-client-tabs" id="clientTabs">
+          <button class="demo-client active" onclick="setClient('cursor', this)">cursor</button>
+          <button class="demo-client" onclick="setClient('claude', this)">claude</button>
+          <button class="demo-client" onclick="setClient('chatgpt', this)">chatgpt</button>
+        </div>
+      </div>
+      <div class="demo-body" id="messages"></div>
+      <div class="thinking" id="thinking">
+        <div class="dot-anim"><span></span><span></span><span></span></div>
+        <span id="thinkingLabel">reading your screen log</span>
+      </div>
+    </div>
+  </div>
 </div>
-</section>
+
+<div class="log-divider" id="logDivider">
+  <div class="log-grass">
+    <svg viewBox="0 0 1440 20" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:20px;display:block;position:absolute;bottom:22px;">
+      <path d="M0 20 C20 8,40 14,60 10 C80 6,100 15,120 11 C140 7,160 13,180 9 C200 5,220 14,240 10 C260 6,280 13,300 9 C320 5,340 14,360 11 C380 8,400 13,420 8 C440 3,460 14,480 10 C500 6,520 13,540 9 C560 5,580 14,600 10 C620 6,640 13,660 8 C680 3,700 14,720 10 C740 6,760 12,780 8 C800 4,820 13,840 9 C860 5,880 14,900 10 C920 6,940 13,960 8 C980 3,1000 14,1020 10 C1040 6,1060 13,1080 9 C1100 5,1120 14,1140 10 C1160 6,1180 12,1200 8 C1220 4,1240 13,1260 9 C1280 5,1300 14,1320 10 C1340 6,1360 13,1380 8 C1400 3,1420 13,1440 9 L1440 20 Z" fill="#5a7a2e"/>
+      <path d="M0 20 C15 12,35 18,55 13 C75 8,95 17,115 13 C135 9,155 17,175 13 C195 9,215 16,235 12 C255 8,275 17,295 13 C315 9,335 16,355 12 C375 8,395 17,415 12 C435 7,455 16,475 12 C495 8,515 16,535 12 C555 8,575 16,595 12 C615 8,635 16,655 11 C675 6,695 16,715 12 C735 8,755 15,775 11 C795 7,815 16,835 12 C855 8,875 15,895 11 C915 7,935 16,955 12 C975 8,995 15,1015 11 C1035 7,1055 16,1075 12 C1095 8,1115 15,1135 11 C1155 7,1175 15,1195 11 C1215 7,1235 15,1255 11 C1275 7,1295 15,1315 11 C1335 7,1355 15,1375 10 C1395 5,1415 15,1440 11 L1440 20 Z" fill="#7faa45"/>
+    </svg>
+    <div class="log-ground"></div>
+  </div>
+  <svg class="log-roller" id="logRoller" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+    <ellipse cx="100" cy="100" rx="100" ry="100" fill="#8B5E3C"/>
+    <ellipse cx="100" cy="100" rx="88" ry="88" fill="#A0722A"/>
+    <ellipse cx="100" cy="100" rx="74" ry="74" fill="#C8964A"/>
+    <ellipse cx="100" cy="100" rx="58" ry="58" fill="#D9A85C"/>
+    <ellipse cx="100" cy="100" rx="42" ry="42" fill="#E8C07A"/>
+    <ellipse cx="100" cy="100" rx="26" ry="26" fill="#F2D490"/>
+    <ellipse cx="68" cy="92" rx="16" ry="17" fill="white"/>
+    <ellipse cx="132" cy="92" rx="16" ry="17" fill="white"/>
+    <g id="logEyes">
+      <ellipse cx="68" cy="92" rx="10" ry="11" fill="#1a1a1a"/>
+      <ellipse cx="132" cy="92" rx="10" ry="11" fill="#1a1a1a"/>
+      <ellipse cx="71" cy="89" rx="4" ry="4" fill="white"/>
+      <ellipse cx="135" cy="89" rx="4" ry="4" fill="white"/>
+    </g>
+    <path d="M 76 118 Q 100 132 124 118" stroke="#7a5020" stroke-width="5" fill="none" stroke-linecap="round"/>
+  </svg>
+</div>
+
+<div class="video-section" id="demo-video">
+  <div style="width:100%;max-width:800px;aspect-ratio:16/9;background:var(--paper);border:0.5px solid var(--border);border-radius:4px;display:flex;align-items:center;justify-content:center;">
+    <span style="font-family:'DM Mono',monospace;font-size:12px;color:var(--muted);letter-spacing:0.08em;">video coming soon</span>
+  </div>
+</div>
+
+<div class="how-section">
+  <div class="section" id="how">
+    <p class="section-eyebrow">how it works</p>
+    <h2>your screen, turned into<br><em>structured memory</em></h2>
+    <div class="log-timeline">
+      <div class="section-leaves" style="left:-50px;">
+        <div class="section-leaf"><svg width="36" height="52" viewBox="0 0 36 52" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 48C4 48 2 28 18 12C34 -4 34 4 34 4C34 4 36 24 20 40C4 56 4 48 4 48Z" fill="#7faa45"/><path d="M4 48C14 32 24 18 34 4" stroke="#5a7a2e" stroke-width="1" opacity="0.6"/></svg></div>
+        <div class="section-leaf"><svg width="30" height="44" viewBox="0 0 30 44" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 40C3 40 1 24 15 10C29 -4 28 3 28 3C28 3 30 20 16 34C2 48 3 40 3 40Z" fill="#5a7a2e"/><path d="M3 40C12 27 20 15 28 3" stroke="#4a6a24" stroke-width="1" opacity="0.5"/></svg></div>
+        <div class="section-leaf"><svg width="32" height="48" viewBox="0 0 32 48" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 44C4 44 0 26 16 12C32 -2 30 6 30 6C30 6 34 24 18 38C2 52 4 44 4 44Z" fill="#8bb84a"/><path d="M4 44C14 30 22 18 30 6" stroke="#6a9a35" stroke-width="1" opacity="0.5"/></svg></div>
+        <div class="section-leaf"><svg width="28" height="40" viewBox="0 0 28 40" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 36C3 36 1 20 14 8C27 -4 26 3 26 3C26 3 28 20 15 32C2 44 3 36 3 36Z" fill="#7faa45"/><path d="M3 36C11 24 18 14 26 3" stroke="#5a7a2e" stroke-width="1" opacity="0.6"/></svg></div>
+        <div class="section-leaf"><svg width="34" height="46" viewBox="0 0 34 46" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 42C4 42 1 24 17 10C33 -4 32 5 32 5C32 5 35 23 19 37C3 51 4 42 4 42Z" fill="#5a7a2e"/><path d="M4 42C14 28 22 16 32 5" stroke="#4a6a24" stroke-width="1" opacity="0.5"/></svg></div>
+        <div class="section-leaf"><svg width="30" height="42" viewBox="0 0 30 42" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 38C3 38 1 22 14 9C27 -4 26 4 26 4C26 4 28 21 15 34C2 47 3 38 3 38Z" fill="#8bb84a"/><path d="M3 38C11 26 18 15 26 4" stroke="#6a9a35" stroke-width="1" opacity="0.5"/></svg></div>
+        <div class="section-leaf"><svg width="34" height="50" viewBox="0 0 34 50" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 46C4 46 1 27 17 12C33 -3 32 5 32 5C32 5 35 24 19 39C3 54 4 46 4 46Z" fill="#7faa45"/><path d="M4 46C14 31 22 18 32 5" stroke="#5a7a2e" stroke-width="1" opacity="0.6"/></svg></div>
+        <div class="section-leaf"><svg width="28" height="38" viewBox="0 0 28 38" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 34C3 34 1 19 13 8C25 -3 24 4 24 4C24 4 26 19 14 30C2 41 3 34 3 34Z" fill="#5a7a2e"/><path d="M3 34C10 23 16 14 24 4" stroke="#4a6a24" stroke-width="1" opacity="0.5"/></svg></div>
+        <div class="section-leaf"><svg width="32" height="46" viewBox="0 0 32 46" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 42C4 42 1 25 16 11C31 -3 30 5 30 5C30 5 33 23 18 37C3 51 4 42 4 42Z" fill="#8bb84a"/><path d="M4 42C13 29 21 17 30 5" stroke="#6a9a35" stroke-width="1" opacity="0.5"/></svg></div>
+        <div class="section-leaf"><svg width="30" height="44" viewBox="0 0 30 44" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 40C3 40 1 24 15 10C29 -4 28 3 28 3C28 3 30 20 16 34C2 48 3 40 3 40Z" fill="#7faa45"/><path d="M3 40C12 27 20 15 28 3" stroke="#5a7a2e" stroke-width="1" opacity="0.6"/></svg></div>
+      </div>
+      <div class="log-trunk-col">
+        <svg width="60" viewBox="0 0 60 360" preserveAspectRatio="xMidYMin slice" xmlns="http://www.w3.org/2000/svg" style="width:60px;height:100%;display:block;">
+          <rect x="4" y="0" width="52" height="360" rx="26" fill="#6b3e1e"/>
+          <rect x="8" y="0" width="44" height="360" rx="22" fill="#8B5E3C"/>
+          <rect x="13" y="0" width="34" height="360" rx="17" fill="#A0722A"/>
+          <rect x="18" y="0" width="24" height="360" rx="12" fill="#C8964A"/>
+          <rect x="23" y="0" width="14" height="360" rx="7" fill="#D9A85C"/>
+          <ellipse cx="19" cy="28" rx="6" ry="6.5" fill="white"/>
+          <ellipse cx="41" cy="28" rx="6" ry="6.5" fill="white"/>
+          <ellipse id="pupilL2" cx="19" cy="29" rx="3.5" ry="4" fill="#1a1a1a"/>
+          <ellipse id="pupilR2" cx="41" cy="29" rx="3.5" ry="4" fill="#1a1a1a"/>
+          <ellipse cx="20.5" cy="27" rx="1.5" ry="1.5" fill="white"/>
+          <ellipse cx="42.5" cy="27" rx="1.5" ry="1.5" fill="white"/>
+          <path d="M 15 42 Q 30 49 45 42" stroke="#6b3e1e" stroke-width="2" fill="none" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <div class="log-timeline-steps">
+        <div class="log-timeline-step">
+          <div class="log-step-line"></div>
+          <div class="log-step-content">
+            <div class="pipeline-num">01 —</div>
+            <div class="pipeline-name">capture</div>
+            <div class="pipeline-body">vizlog runs in the background and samples your screen. you pick which apps it can see.</div>
+          </div>
+        </div>
+        <div class="log-timeline-step">
+          <div class="log-step-line"></div>
+          <div class="log-step-content">
+            <div class="pipeline-num">02 —</div>
+            <div class="pipeline-name">structure</div>
+            <div class="pipeline-body">every minute gets turned into searchable text. what was on screen, what you were doing. stored as plain files on your disk.</div>
+          </div>
+        </div>
+        <div class="log-timeline-step">
+          <div class="log-step-line"></div>
+          <div class="log-step-content">
+            <div class="pipeline-num">03 —</div>
+            <div class="pipeline-name">retrieve</div>
+            <div class="pipeline-body">the MCP server plugs your context into whatever agent you already use. no new interface to learn, nothing leaves your machine.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section" id="memory" style="border-bottom: 0.5px solid var(--border);">
+  <p class="section-eyebrow">memory efficiency</p>
+  <h2>text, not video.<br><em>orders of magnitude</em> smaller.</h2>
+  <div class="pipeline-body" style="max-width:600px;margin-bottom:0">vizlog doesn't keep recordings. after each minute is processed, the video gets deleted. all that stays is text. from our own usage as founders, here's what that looks like:</div>
+  <div class="memory-grid">
+    <div class="memory-card">
+      <div class="memory-card-label">per minute</div>
+      <div class="memory-card-num"><em>~32</em> KB</div>
+      <div class="memory-card-sub">a typical minute on your disk.</div>
+    </div>
+    <div class="memory-card">
+      <div class="memory-card-label">per day (10–12h)</div>
+      <div class="memory-card-num"><em>~23</em> MB</div>
+      <div class="memory-card-sub">a full working day. all searchable.</div>
+    </div>
+    <div class="memory-card">
+      <div class="memory-card-label">per year (5 days/wk)</div>
+      <div class="memory-card-num"><em>~5–7</em> GB</div>
+      <div class="memory-card-sub">a whole year. smaller than one hour of 4K video.</div>
+    </div>
+    <div class="memory-card">
+      <div class="memory-card-label">right now</div>
+      <div class="memory-card-num"><em>&lt;5</em> MB</div>
+      <div class="memory-card-sub">the last 60 seconds of your screen, held in memory. always fresh, never saved to disk.</div>
+    </div>
+  </div>
+</div>
+
+<div class="quotes-section" style="background:#eee9e0;overflow:hidden;">
+  <div class="section" style="padding-top:0;padding-bottom:0;">
+  <p class="section-eyebrow">what we've heard</p>
+  <div class="quotes-list">
+    <div class="section-leaves">
+      <div class="section-leaf"><svg width="36" height="52" viewBox="0 0 36 52" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 48C4 48 2 28 18 12C34 -4 34 4 34 4C34 4 36 24 20 40C4 56 4 48 4 48Z" fill="#7faa45"/><path d="M4 48C14 32 24 18 34 4" stroke="#5a7a2e" stroke-width="1" opacity="0.6"/></svg></div>
+      <div class="section-leaf"><svg width="30" height="44" viewBox="0 0 30 44" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 40C3 40 1 24 15 10C29 -4 28 3 28 3C28 3 30 20 16 34C2 48 3 40 3 40Z" fill="#5a7a2e"/><path d="M3 40C12 27 20 15 28 3" stroke="#4a6a24" stroke-width="1" opacity="0.5"/></svg></div>
+      <div class="section-leaf"><svg width="32" height="48" viewBox="0 0 32 48" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 44C4 44 0 26 16 12C32 -2 30 6 30 6C30 6 34 24 18 38C2 52 4 44 4 44Z" fill="#8bb84a"/><path d="M4 44C14 30 22 18 30 6" stroke="#6a9a35" stroke-width="1" opacity="0.5"/></svg></div>
+      <div class="section-leaf"><svg width="28" height="40" viewBox="0 0 28 40" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 36C3 36 1 20 14 8C27 -4 26 3 26 3C26 3 28 20 15 32C2 44 3 36 3 36Z" fill="#7faa45"/><path d="M3 36C11 24 18 14 26 3" stroke="#5a7a2e" stroke-width="1" opacity="0.6"/></svg></div>
+      <div class="section-leaf"><svg width="34" height="46" viewBox="0 0 34 46" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 42C4 42 1 24 17 10C33 -4 32 5 32 5C32 5 35 23 19 37C3 51 4 42 4 42Z" fill="#5a7a2e"/><path d="M4 42C14 28 22 16 32 5" stroke="#4a6a24" stroke-width="1" opacity="0.5"/></svg></div>
+      <div class="section-leaf"><svg width="30" height="42" viewBox="0 0 30 42" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 38C3 38 1 22 14 9C27 -4 26 4 26 4C26 4 28 21 15 34C2 47 3 38 3 38Z" fill="#8bb84a"/><path d="M3 38C11 26 18 15 26 4" stroke="#6a9a35" stroke-width="1" opacity="0.5"/></svg></div>
+      <div class="section-leaf"><svg width="34" height="50" viewBox="0 0 34 50" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 46C4 46 1 27 17 12C33 -3 32 5 32 5C32 5 35 24 19 39C3 54 4 46 4 46Z" fill="#7faa45"/><path d="M4 46C14 31 22 18 32 5" stroke="#5a7a2e" stroke-width="1" opacity="0.6"/></svg></div>
+      <div class="section-leaf"><svg width="28" height="38" viewBox="0 0 28 38" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 34C3 34 1 19 13 8C25 -3 24 4 24 4C24 4 26 19 14 30C2 41 3 34 3 34Z" fill="#5a7a2e"/><path d="M3 34C10 23 16 14 24 4" stroke="#4a6a24" stroke-width="1" opacity="0.5"/></svg></div>
+      <div class="section-leaf"><svg width="32" height="46" viewBox="0 0 32 46" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 42C4 42 1 25 16 11C31 -3 30 5 30 5C30 5 33 23 18 37C3 51 4 42 4 42Z" fill="#8bb84a"/><path d="M4 42C13 29 21 17 30 5" stroke="#6a9a35" stroke-width="1" opacity="0.5"/></svg></div>
+      <div class="section-leaf"><svg width="30" height="44" viewBox="0 0 30 44" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 40C3 40 1 24 15 10C29 -4 28 3 28 3C28 3 30 20 16 34C2 48 3 40 3 40Z" fill="#7faa45"/><path d="M3 40C12 27 20 15 28 3" stroke="#5a7a2e" stroke-width="1" opacity="0.6"/></svg></div>
+    </div>
+    <div class="quote-item">
+      <span class="quote-mark">"</span>
+      <div>
+        <p class="quote-text">I wish there was a way to send screenshots to my Claude Code on a different machine. Right now I just describe what's on screen and hope it understands.</p>
+        <p class="quote-who">software engineer</p>
+      </div>
+    </div>
+    <div class="quote-item">
+      <span class="quote-mark">"</span>
+      <div>
+        <p class="quote-text">I work so much that I don't know what my days actually look like. I wish I could talk to an AI about my schedule tendencies and optimize them.</p>
+        <p class="quote-who">founder</p>
+      </div>
+    </div>
+    <div class="quote-item">
+      <span class="quote-mark">"</span>
+      <div>
+        <p class="quote-text">I wish agents were more proactive and knew more about me. Having to re-explain everything every time I need a task done is exhausting.</p>
+        <p class="quote-who">product manager</p>
+      </div>
+    </div>
+    <div class="quote-item">
+      <span class="quote-mark">"</span>
+      <div>
+        <p class="quote-text">Anytime I want to automate a workflow, I have to codify every step of something I already forgot. Having something that can break it into steps I can build an agent for is gamechanging.</p>
+        <p class="quote-who">founder</p>
+      </div>
+    </div>
+    <div class="quote-item" style="grid-column:1/-1">
+      <span class="quote-mark">"</span>
+      <div>
+        <p class="quote-text">Information that matters to me is everywhere — my X feed, my code, my AI chats. Email and calendar tools just don't cut deep enough.</p>
+        <p class="quote-who">founder</p>
+      </div>
+    </div>
+  </div>
+  </div>
+</div>
+
+<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:5rem 2rem;text-align:center;border-bottom:0.5px solid var(--border);">
+  <h2 style="font-size:clamp(2rem,3.5vw,3.2rem);font-weight:300;letter-spacing:-0.02em;line-height:1.1;margin-bottom:1rem;">see vizlog in action</h2>
+  <p style="font-size:0.9rem;color:var(--muted);max-width:360px;line-height:1.75;font-weight:300;margin-bottom:1.25rem;">we're onboarding early users now. book a quick call and we'll get you set up.</p>
+  <a href="https://cal.com/vizlog" style="font-family:'DM Mono',monospace;font-size:13px;letter-spacing:0.05em;padding:0.85rem 2.5rem;background:var(--ink);color:var(--paper);border-radius:2px;text-decoration:none;" onmouseover="this.style.opacity=0.8" onmouseout="this.style.opacity=1">talk to a founder</a>
+</div>
 
 <footer>
-<div class="footer-inner">
-<div class="footer-brand">© 2026 Basis Labs, Inc.</div>
-<div class="footer-links">
-<a href="https://github.com/Jity01/basis" class="footer-link-github" target="_blank" rel="noopener noreferrer">github</a>
-<a href="https://x.com/JustReheat" class="footer-link-twitter" target="_blank" rel="noopener noreferrer">twitter</a>
-<a href="https://www.linkedin.com/company/justreheat" target="_blank" rel="noopener noreferrer">linkedin</a>
-</div>
-</div>
+  <span>© 2026 Basis Labs, Inc. All rights reserved.</span>
+  <div style="display:flex;gap:1.5rem;">
+    <a href="https://github.com/vizlog" style="font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);text-decoration:none;">github</a>
+    <a href="https://twitter.com/vizlog" style="font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);text-decoration:none;">twitter</a>
+    <a href="https://linkedin.com/company/vizlog" style="font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);text-decoration:none;">linkedin</a>
+  </div>
 </footer>
 
 <script>
-function toggleTheme(){
-const html=document.documentElement;
-const current=html.getAttribute('data-theme');
-const next=current==='light'?'dark':'light';
-html.setAttribute('data-theme',next);
-localStorage.setItem('justreheat-theme',next);
-}
-const saved=localStorage.getItem('justreheat-theme');
-if(saved)document.documentElement.setAttribute('data-theme',saved);
+var clients = {
+  cursor:  { badge: 'cursor - agent mode', color: '#1a1a1a' },
+  claude:  { badge: 'claude - mcp', color: '#cc7a3d' },
+  chatgpt: { badge: 'chatgpt - mcp connector', color: '#10a37f' }
+};
 
-document.addEventListener('DOMContentLoaded',function(){
-document.body.addEventListener('click',function(e){
-var a=e.target&&e.target.closest&&e.target.closest('a[href]');
-if(!a||!window.posthog)return;
-var href=a.getAttribute('href')||'';
-var label=(a.textContent||'').trim().slice(0,120);
-var section='body';
-if(a.closest('nav'))section='nav';
-else if(a.closest('.cta-group'))section='hero_cta';
-else if(a.closest('footer'))section='footer';
-posthog.capture('landing_link_click',{href:href,link_label:label,section:section});
-});
-});
+var convos = {
+  cursor: [
+    { role: 'user', text: "do you think any of the tools i saw on x this morning should be added to this project?" },
+    { role: 'ai',   text: "From your screen this morning, you had openspec, betterauth, and starsling open on x.com. All three are solid. Given where this project is:" },
+    { role: 'ai',   text: "Add openspec now. It enforces spec driven development with approval workflows before AI starts coding. Since you're about to onboard contributors, this will keep everyone aligned without you having to review every line." },
+    { role: 'ai',   text: "Betterauth is a great pick for when you build the dashboard. Full auth library for TypeScript with SSO, passkeys, and social login baked in. It'll save you weeks." },
+    { role: 'ai',   text: "Add starsling too. It automates deploys and incident response with AI agents. Even with one service on Railway right now, it can auto triage errors from Sentry and open PRs with fixes. That alone is worth it." }
+  ],
+  claude: [
+    { role: 'user', text: "my railway deploy keeps failing, any idea why?" },
+    { role: 'ai',   text: "I can see the Railway error on your screen. Build failed at the install step. You set the root directory to services/api, but that folder doesn't have its own package.json." },
+    { role: 'ai',   text: "Easiest fix: point Railway at the monorepo root and set the start command to node services/api/server.js." }
+  ],
+  chatgpt: [
+    { role: 'user', text: "how should I respond to kana's email?" },
+    { role: 'ai',   text: "I can see her reply in your Gmail. She said 'tell me more about how the context manager works.' From her LinkedIn, she's a founding engineer at a YC company. Her posts are mostly about agent infra and MCP tooling. Definitely knows the space." },
+    { role: 'ai',   text: "Looking at how she responded to you, she's pretty direct and skips the fluff. I'd match that energy. Tell her vizlog captures your screen locally, turns it into structured text, and exposes it via MCP so any agent can use it. Offer a quick demo and leave it at that." }
+  ]
+};
+
+var currentClient = 'cursor';
+
+function setClient(key, el) {
+  currentClient = key;
+  document.querySelectorAll('.demo-client').forEach(function(b) { b.classList.remove('active'); });
+  el.classList.add('active');
+  renderConvo();
+}
+
+function renderConvo() {
+  var messagesEl = document.getElementById('messages');
+  var thinking = document.getElementById('thinking');
+  var c = convos[currentClient];
+  var color = clients[currentClient].color;
+  messagesEl.innerHTML = '';
+  thinking.classList.remove('active');
+  var delay = 0;
+  c.forEach(function(msg, i) {
+    delay += i === 0 ? 0 : (c[i-1].role === 'user' ? 700 : 400);
+    (function(m, d) {
+      setTimeout(function() {
+        if (m.role === 'ai') {
+          thinking.classList.add('active');
+          setTimeout(function() {
+            thinking.classList.remove('active');
+            appendMsg(m, color, messagesEl);
+          }, 600);
+        } else {
+          appendMsg(m, color, messagesEl);
+        }
+      }, d);
+    })(msg, delay);
+  });
+}
+
+function appendMsg(m, color, messagesEl) {
+  var el = document.createElement('div');
+  el.className = 'msg visible';
+  if (m.role === 'user') {
+    el.innerHTML = '<div class="msg-avatar user">you</div><div class="msg-bubble user">' + m.text + '</div>';
+  } else {
+    var initial = currentClient.charAt(0).toUpperCase();
+    var badge = '<div class="msg-client-badge" style="background:' + color + ';color:white;border-color:' + color + '">' + clients[currentClient].badge + '</div>';
+    el.innerHTML = '<div class="msg-avatar ai" style="background:' + color + ';color:white;font-weight:500;font-size:10px;">' + initial + '</div><div>' + badge + '<div class="msg-bubble">' + m.text.split('\n').join('<br>') + '</div></div>';
+  }
+  messagesEl.appendChild(el);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+window.addEventListener('load', function() { renderConvo(); });
+
+// LOG ROLLER
+(function() {
+  var divider = document.getElementById('logDivider');
+  var roller = document.getElementById('logRoller');
+  var eyes = document.getElementById('logEyes');
+  var SIZE = 56, SPEED = 1.4;
+  var x, angle, dir, blinking, rafId;
+
+  function init() {
+    x = divider.clientWidth * 0.25;
+    angle = 0; dir = 1; blinking = false;
+    roller.style.transition = 'none';
+    eyes.style.transition = 'none';
+    eyes.style.transform = '';
+    step();
+  }
+
+  function minX() { return divider.clientWidth * 0.25; }
+  function maxX() { return divider.clientWidth * 0.75; }
+
+  function blink(cb) {
+    blinking = true;
+    var n = 0;
+    function once() {
+      eyes.style.transition = 'transform 0.06s';
+      eyes.style.transformOrigin = '100px 92px';
+      eyes.style.transform = 'scaleY(0.08)';
+      setTimeout(function() {
+        eyes.style.transform = 'scaleY(1)';
+        setTimeout(function() { n++; if (n < 2) { setTimeout(once, 100); } else { blinking = false; cb(); } }, 90);
+      }, 65);
+    }
+    setTimeout(once, 150);
+  }
+
+  function step() {
+    cancelAnimationFrame(rafId);
+    var degPerPx = 360 / (Math.PI * SIZE);
+    function frame() {
+      x += dir * SPEED;
+      angle += dir * SPEED * degPerPx;
+      var atRight = x >= maxX();
+      var atLeft = x <= minX();
+      if (atRight || atLeft) {
+        x = atRight ? maxX() : minX();
+        draw();
+        blink(function() { dir *= -1; step(); });
+        return;
+      }
+      draw();
+      rafId = requestAnimationFrame(frame);
+    }
+    rafId = requestAnimationFrame(frame);
+  }
+
+  function draw() {
+    roller.style.left = x + 'px';
+    roller.style.bottom = '30px';
+    roller.style.top = 'auto';
+    roller.style.transform = 'rotate(' + angle + 'deg)';
+  }
+
+  window.addEventListener('load', init);
+  window.addEventListener('resize', function() { cancelAnimationFrame(rafId); init(); });
+})();
+
+// TRUNK BLINK
+(function() {
+  function blink() {
+    var pL = document.getElementById('pupilL2');
+    var pR = document.getElementById('pupilR2');
+    if (!pL || !pR) return;
+    pL.setAttribute('ry', '0.4');
+    pR.setAttribute('ry', '0.4');
+    setTimeout(function() {
+      pL.setAttribute('ry', '4');
+      pR.setAttribute('ry', '4');
+      setTimeout(blink, 2500 + Math.random() * 2000);
+    }, 110);
+  }
+  window.addEventListener('load', function() { setTimeout(blink, 2000); });
+})();
 </script>
+
 </body>
 </html>

@@ -1,6 +1,13 @@
 import "./bundledBinPaths";
 import { app, BrowserWindow } from "electron";
+import * as fs from "fs";
 import * as path from "path";
+
+/** Landing-page mark (`apps/desktop/build/icon.png`); used for dev dock + window chrome. */
+function appIconPath(): string | undefined {
+  const p = path.join(__dirname, "../build/icon.png");
+  return fs.existsSync(p) ? p : undefined;
+}
 import { setupIpc, setMainWindow } from "./ipcHandlers";
 import { clearExclusionsRequiresRestart, loadExclusions, stopHotBuffer } from "@context-manager/core";
 import { initializeSckitExclusions } from "./sckitExclusions";
@@ -29,12 +36,14 @@ app.on("second-instance", () => {
 
 function createWindow(): void {
   const isDev = process.env.VITE_DEV_SERVER_URL != null;
+  const icon = appIconPath();
 
   mainWindow = new BrowserWindow({
     width: 680,
     height: 560,
     show: true,
     center: true,
+    ...(icon ? { icon } : {}),
     // Match ui/styles.css --bg so the shell isn’t bright white before React paints.
     backgroundColor: "#2c1e14",
     webPreferences: {
@@ -62,6 +71,13 @@ function createWindow(): void {
 // ── App lifecycle ────────────────────────────────────────────────────────────
 
 app.whenReady().then(() => {
+  if (process.platform === "darwin" && !app.isPackaged) {
+    const icon = appIconPath();
+    if (icon) {
+      app.dock.setIcon(icon);
+    }
+  }
+
   const exclusions = loadExclusions();
   try {
     initializeSckitExclusions(exclusions);
