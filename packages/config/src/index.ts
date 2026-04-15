@@ -1,12 +1,10 @@
 import * as path from "path";
-import * as os from "os";
+import { CONTEXT_ROOT } from "./paths";
 export * from "./types";
+export * from "./credentials";
+export * from "./paths";
 export { DEFAULT_LOCAL_SCOPES } from "./localScopes";
 
-export const CONTEXT_ROOT =
-  process.env.CONTEXT_ROOT || path.join(os.homedir(), "context");
-export const BASIS_ROOT =
-  process.env.BASIS_ROOT || path.join(os.homedir(), ".basis");
 export const CHUNK_DURATION_MS = 60_000; // 1 minute
 export const FRAMES_PER_CHUNK = 15;
 export const FRAMES_TO_KEEP = 5;
@@ -45,4 +43,3 @@ export const DEFAULT_WIKI_TEXT_MODEL =
 export function wikiRootPath(contextRoot: string = CONTEXT_ROOT): string {
   return path.join(contextRoot, WIKI_DIR_NAME);
 }
-

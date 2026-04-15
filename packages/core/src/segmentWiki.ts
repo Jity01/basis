@@ -3,7 +3,7 @@ import * as fs from "fs/promises";
 import * as fsSync from "fs";
 import * as path from "path";
 import type { AISettings } from "@context-manager/config";
-import { DEFAULT_WIKI_TEXT_MODEL } from "@context-manager/config";
+import { DEFAULT_WIKI_TEXT_MODEL, readCredentials } from "@context-manager/config";
 import {
   NARRATOR_SYSTEM_PROMPT,
   buildNarratorUserPrompt,
@@ -35,7 +35,14 @@ function getApiKey(settings?: AISettings): string {
   );
 }
 
+const VIZLOG_PROCESSING_URL = "https://process.vizlog.ai/v1";
+
 function getFireworksBaseUrl(): string {
+  // In hosted mode, route through Vizlog's processing proxy
+  const creds = readCredentials();
+  if (creds?.authToken) {
+    return process.env.VIZLOG_PROCESSING_URL?.trim() || VIZLOG_PROCESSING_URL;
+  }
   return process.env.FIREWORKS_BASE_URL?.trim() || DEFAULT_FIREWORKS_BASE_URL;
 }
 
@@ -49,6 +56,14 @@ function getChatUrl(): string {
 }
 
 function getChatHeaders(settings?: AISettings): Record<string, string> {
+  // In hosted mode, use the Vizlog auth token instead of Fireworks key
+  const creds = readCredentials();
+  if (creds?.authToken) {
+    return {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${creds.authToken}`,
+    };
+  }
   return {
     "Content-Type": "application/json",
     Authorization: `Bearer ${getApiKey(settings)}`,

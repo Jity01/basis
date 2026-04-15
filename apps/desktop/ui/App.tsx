@@ -6,6 +6,7 @@ import type {
   ExclusionsConfig,
   SckitExclusionsInitState,
 } from "@context-manager/config";
+import Onboarding from "./Onboarding";
 
 const contextManager = window.contextManager;
 const INDEX_SECTION_PATTERN = /\[(\d{2}):(\d{2})\]\n([\s\S]*?)(?=\n\n\[\d{2}:\d{2}\]\n|$)/g;
@@ -97,6 +98,7 @@ function serializeIndexSections(sections: Array<{ time: string; summaryText: str
 }
 
 export default function App() {
+  const [showOnboarding, setShowOnboarding] = useState<boolean | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>("controls");
   const [isRecording, setIsRecording] = useState(false);
   const [duration, setDuration] = useState(0);
@@ -473,6 +475,21 @@ export default function App() {
 
   useEffect(() => {
     if (!contextManager) {
+      setShowOnboarding(false);
+      return;
+    }
+    if (typeof contextManager.hasCredentials === "function") {
+      contextManager.hasCredentials().then(
+        (has) => setShowOnboarding(!has),
+        () => setShowOnboarding(false)
+      );
+    } else {
+      setShowOnboarding(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!contextManager) {
       return;
     }
 
@@ -527,6 +544,9 @@ export default function App() {
   const claudeConfigSnippet = mcpServerPath
     ? JSON.stringify({ mcpServers: { basis: { command: "node", args: [mcpServerPath] } } }, null, 2)
     : "";
+
+  if (showOnboarding === null) return null;
+  if (showOnboarding) return <Onboarding onComplete={() => setShowOnboarding(false)} />;
 
   return (
     <div className="app-shell">

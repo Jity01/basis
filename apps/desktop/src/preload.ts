@@ -68,4 +68,30 @@ contextBridge.exposeInMainWorld("contextManager", {
   // AI settings
   getAISettings: () => ipcRenderer.invoke("get-ai-settings"),
   updateAISettings: (settings: Partial<AISettings>) => ipcRenderer.invoke("update-ai-settings", settings),
+
+  // Credentials
+  hasCredentials: () => ipcRenderer.invoke("has-credentials"),
+  getCredentials: () => ipcRenderer.invoke("get-credentials"),
+  saveCredentials: (creds: { authToken: string; accountEmail?: string; tunnelId?: string }) =>
+    ipcRenderer.invoke("save-credentials", creds),
+
+  // MCP Registration
+  detectMcpApps: () => ipcRenderer.invoke("detect-mcp-apps"),
+  registerMcpApps: (appNames: string[]) => ipcRenderer.invoke("register-mcp-apps", appNames),
+  isMcpRegistered: (appName: string) => ipcRenderer.invoke("is-mcp-registered", appName),
+
+  // Tunnel
+  getTunnelState: () => ipcRenderer.invoke("get-tunnel-state"),
+  provisionTunnel: () => ipcRenderer.invoke("provision-tunnel"),
+  startTunnel: () => ipcRenderer.invoke("start-tunnel"),
+  stopTunnel: () => ipcRenderer.invoke("stop-tunnel"),
+  onTunnelState: (callback: (state: { enabled: boolean; status: string; publicUrl: string | null; error: string | null }) => void) => {
+    const listener = (_event: unknown, state: unknown) => {
+      callback(state as { enabled: boolean; status: string; publicUrl: string | null; error: string | null });
+    };
+    ipcRenderer.on("tunnel-state", listener);
+    return () => {
+      ipcRenderer.removeListener("tunnel-state", listener);
+    };
+  },
 });
