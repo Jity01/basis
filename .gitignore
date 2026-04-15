@@ -28,3 +28,6 @@ skills/dot-context-filesystem/
 
 # Internal dev/test scripts
 tasks/
+
+# Scratch/temp directories
+.tmp-context/
