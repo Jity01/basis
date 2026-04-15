@@ -12,6 +12,14 @@ import type {
 } from "@context-manager/config";
 
 interface ContextManagerAPI {
+  // Onboarding / auth
+  hasCredentials: () => Promise<boolean>;
+  saveCredentials: (creds: { authToken: string; accountEmail?: string; tunnelId?: string }) => Promise<{ success: boolean }>;
+  detectMcpApps: () => Promise<string[]>;
+  registerMcpApps: (appNames: string[]) => Promise<Record<string, { success: boolean; error?: string }>>;
+  provisionTunnel: () => Promise<{ success: boolean; error?: string }>;
+  startTunnel: () => Promise<{ enabled: boolean; status: string; publicUrl: string | null; error: string | null }>;
+  // Recording
   startRecording: () => Promise<{ success: boolean; filePath: string }>;
   stopRecording: () => Promise<{ success: boolean }>;
   rotateRecording: () => Promise<{ filePath: string }>;

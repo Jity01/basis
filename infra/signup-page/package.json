@@ -1,0 +1,8 @@
+{
+  "name": "vizlog-signup-page",
+  "private": true,
+  "scripts": {
+    "dev": "npx serve .",
+    "deploy": "echo 'Deploy index.html to Cloudflare Pages or S3'"
+  }
+}

@@ -9,6 +9,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { execFile } from "child_process";
 import { promisify } from "util";
+import { readCredentials } from "@context-manager/config";
 import {
   buildWorkerSystemPrompt,
   buildWorkerUserMessage,
@@ -41,48 +42,30 @@ export interface TraceEntry {
   latency_ms: number;
 }
 
-// ── Read-only bash enforcement ──────────────────────────────────────────────
-
-const ALLOWED_COMMANDS = [
-  "rg", "cat", "head", "tail", "ls", "find",
-  "wc", "jq", "grep", "sort", "uniq", "stat", "date",
-];
+// ── Read-only bash enforcement via macOS sandbox ────────────────────────────
 
 /**
- * Returns an error string if the command is not allowed, null if valid.
- * This is a safety net against accidental writes, not adversarial exploitation.
+ * Sandbox profile that allows everything EXCEPT file writes.
+ * macOS sandbox-exec enforces this at the kernel level — no bypasses possible.
+ * The agent can use any command, pipes, redirects — the OS blocks all writes.
  */
-function validateCommand(command: string): string | null {
-  const trimmed = command.trim();
-  // Handle pipes — validate the first command in the pipeline
-  const firstSegment = trimmed.split(/\s*\|\s*/)[0]!;
-  const firstWord = firstSegment.trim().split(/\s+/)[0]!;
-
-  if (!ALLOWED_COMMANDS.includes(firstWord)) {
-    return `Error: '${firstWord}' is not allowed. Read-only commands only: ${ALLOWED_COMMANDS.join(", ")}`;
-  }
-
-  // Block write operators — allow pipes but not redirects or chaining
-  if (/(?<!\|)>|;|&&|\$\(|`/.test(trimmed)) {
-    return "Error: write redirects (>), semicolons, &&, and command substitution are not allowed.";
-  }
-
-  return null;
-}
+const SANDBOX_PROFILE = "(version 1)(allow default)(deny file-write*)";
 
 async function executeBash(
   command: string,
   contextRoot: string
 ): Promise<string> {
-  const error = validateCommand(command);
-  if (error) return error;
-
   try {
-    const { stdout, stderr } = await exec("bash", ["-c", command], {
-      cwd: contextRoot,
-      timeout: 10_000,
-      maxBuffer: 1024 * 1024,
-    });
+    // Use macOS sandbox-exec for OS-level read-only enforcement
+    const { stdout, stderr } = await exec(
+      "sandbox-exec",
+      ["-p", SANDBOX_PROFILE, "bash", "-c", command],
+      {
+        cwd: contextRoot,
+        timeout: 10_000,
+        maxBuffer: 1024 * 1024,
+      }
+    );
     const output = (stdout || "") + (stderr ? `\nSTDERR: ${stderr}` : "");
 
     if (output.length > 50_000) {
@@ -112,9 +95,8 @@ function buildTools(canDispatchWorkers: boolean): Anthropic.Tool[] {
     {
       name: "bash",
       description: `Run a read-only shell command on the Basis data filesystem.
-
-Available commands: ${ALLOWED_COMMANDS.join(", ")}
-Pipes (|) are allowed. Write redirects (>), semicolons, and command substitution are NOT.
+All commands are sandboxed — the OS blocks any file writes at the kernel level.
+You can use any standard Unix command, pipes, and redirects freely.
 
 Useful patterns:
   rg "keyword" .wiki/                     — search all wiki pages (instant)
@@ -178,7 +160,14 @@ COST: ~500ms + small token cost. Not free. Exhaust bash first.`,
 // ── The loop ────────────────────────────────────────────────────────────────
 
 export async function runAgentLoop(config: AgentConfig): Promise<AgentResult> {
-  const client = new Anthropic();
+  // In hosted mode, route Anthropic calls through Vizlog's processing proxy
+  const creds = readCredentials();
+  const client = creds?.authToken
+    ? new Anthropic({
+        baseURL: process.env.VIZLOG_PROCESSING_URL || "https://process.vizlog.ai",
+        apiKey: creds.authToken, // jr_ token — proxy swaps for real Anthropic key
+      })
+    : new Anthropic();
   const trace: TraceEntry[] = [];
   let step = 0;
   const tools = buildTools(config.canDispatchWorkers);

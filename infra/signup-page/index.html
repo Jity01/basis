@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vizlog - Sign Up</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f0f1a;
+      color: #e0e0e0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 400px;
+    }
+
+    .logo {
+      text-align: center;
+      margin-bottom: 40px;
+      font-size: 28px;
+      font-weight: 700;
+      color: #ffffff;
+      letter-spacing: -0.5px;
+    }
+
+    .card {
+      background: #1a1a2e;
+      border-radius: 12px;
+      padding: 32px;
+      border: 1px solid #2a2a3e;
+    }
+
+    .card h2 {
+      font-size: 20px;
+      font-weight: 600;
+      color: #ffffff;
+      margin-bottom: 24px;
+    }
+
+    .form-group {
+      margin-bottom: 16px;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 14px;
+      color: #a0a0b0;
+      margin-bottom: 6px;
+    }
+
+    .form-group input {
+      width: 100%;
+      padding: 10px 14px;
+      background: #12121e;
+      border: 1px solid #2a2a3e;
+      border-radius: 8px;
+      color: #e0e0e0;
+      font-size: 15px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .form-group input:focus {
+      border-color: #6c63ff;
+    }
+
+    .btn {
+      width: 100%;
+      padding: 12px;
+      background: #6c63ff;
+      color: #ffffff;
+      border: none;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+      margin-top: 8px;
+    }
+
+    .btn:hover {
+      background: #5a52d5;
+    }
+
+    .btn:disabled {
+      background: #3a3a5e;
+      cursor: not-allowed;
+    }
+
+    .toggle {
+      text-align: center;
+      margin-top: 20px;
+      font-size: 14px;
+      color: #a0a0b0;
+    }
+
+    .toggle a {
+      color: #6c63ff;
+      text-decoration: none;
+      cursor: pointer;
+    }
+
+    .toggle a:hover {
+      text-decoration: underline;
+    }
+
+    .error-msg {
+      background: #2e1a1a;
+      border: 1px solid #5a2a2a;
+      color: #ff6b6b;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 14px;
+      margin-bottom: 16px;
+      display: none;
+    }
+
+    .error-msg.visible {
+      display: block;
+    }
+
+    /* Token display */
+    .token-view {
+      display: none;
+    }
+
+    .token-view h2 {
+      color: #4ade80;
+    }
+
+    .token-box {
+      background: #12121e;
+      border: 1px solid #2a2a3e;
+      border-radius: 8px;
+      padding: 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 16px 0;
+    }
+
+    .token-value {
+      flex: 1;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 14px;
+      color: #e0e0e0;
+      word-break: break-all;
+      user-select: all;
+    }
+
+    .copy-btn {
+      padding: 8px 16px;
+      background: #6c63ff;
+      color: #ffffff;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.2s;
+    }
+
+    .copy-btn:hover {
+      background: #5a52d5;
+    }
+
+    .instructions {
+      margin-top: 24px;
+      padding-top: 20px;
+      border-top: 1px solid #2a2a3e;
+    }
+
+    .instructions p {
+      font-size: 14px;
+      color: #a0a0b0;
+      margin-bottom: 14px;
+    }
+
+    .instructions ol {
+      list-style: none;
+      counter-reset: steps;
+    }
+
+    .instructions ol li {
+      counter-increment: steps;
+      font-size: 14px;
+      color: #a0a0b0;
+      padding: 6px 0;
+      padding-left: 28px;
+      position: relative;
+    }
+
+    .instructions ol li::before {
+      content: counter(steps);
+      position: absolute;
+      left: 0;
+      width: 20px;
+      height: 20px;
+      background: #2a2a3e;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      color: #6c63ff;
+      font-weight: 600;
+    }
+
+    .open-app-btn {
+      display: inline-block;
+      margin-top: 20px;
+      padding: 10px 20px;
+      background: transparent;
+      border: 1px solid #2a2a3e;
+      color: #a0a0b0;
+      border-radius: 8px;
+      font-size: 14px;
+      text-decoration: none;
+      cursor: pointer;
+      transition: border-color 0.2s, color 0.2s;
+    }
+
+    .open-app-btn:hover {
+      border-color: #6c63ff;
+      color: #ffffff;
+    }
+
+    .copied-toast {
+      position: fixed;
+      bottom: 30px;
+      left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: #4ade80;
+      color: #0f0f1a;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      opacity: 0;
+      transition: opacity 0.2s, transform 0.2s;
+      pointer-events: none;
+    }
+
+    .copied-toast.visible {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="logo">Vizlog</div>
+
+    <!-- Auth Form -->
+    <div class="card" id="authCard">
+      <h2 id="formTitle">Create your account</h2>
+
+      <div class="error-msg" id="errorMsg"></div>
+
+      <form id="authForm">
+        <div class="form-group">
+          <label for="email">Email</label>
+          <input type="email" id="email" autocomplete="email" required>
+        </div>
+        <div class="form-group">
+          <label for="password">Password</label>
+          <input type="password" id="password" autocomplete="current-password" minlength="8" required>
+        </div>
+        <button type="submit" class="btn" id="submitBtn">Sign Up</button>
+      </form>
+
+      <div class="toggle" id="toggleMsg">
+        Already have an account? <a id="toggleLink">Log in</a>
+      </div>
+    </div>
+
+    <!-- Token Display -->
+    <div class="card token-view" id="tokenCard">
+      <h2>You're in!</h2>
+
+      <p style="font-size: 14px; color: #a0a0b0; margin-top: 4px;">Your auth token:</p>
+
+      <div class="token-box">
+        <span class="token-value" id="tokenValue"></span>
+        <button class="copy-btn" id="copyBtn">Copy</button>
+      </div>
+
+      <div class="instructions">
+        <p>Paste this in the Vizlog app to connect.</p>
+        <ol>
+          <li>Open Vizlog</li>
+          <li>Paste your token</li>
+          <li>Start recording</li>
+        </ol>
+      </div>
+
+      <a href="vizlog://auth" class="open-app-btn" id="openAppBtn">Open Vizlog app</a>
+    </div>
+  </div>
+
+  <div class="copied-toast" id="copiedToast">Copied to clipboard</div>
+
+  <script>
+    // ── Configuration ──
+    const AUTH_API_URL = 'https://vizlog-auth.vizlog.workers.dev';
+
+    // ── State ──
+    let isSignup = true;
+
+    // ── DOM refs ──
+    const authCard = document.getElementById('authCard');
+    const tokenCard = document.getElementById('tokenCard');
+    const authForm = document.getElementById('authForm');
+    const formTitle = document.getElementById('formTitle');
+    const submitBtn = document.getElementById('submitBtn');
+    const toggleMsg = document.getElementById('toggleMsg');
+    const toggleLink = document.getElementById('toggleLink');
+    const errorMsg = document.getElementById('errorMsg');
+    const emailInput = document.getElementById('email');
+    const passwordInput = document.getElementById('password');
+    const tokenValue = document.getElementById('tokenValue');
+    const copyBtn = document.getElementById('copyBtn');
+    const copiedToast = document.getElementById('copiedToast');
+
+    // ── Toggle between signup and login ──
+    toggleLink.addEventListener('click', () => {
+      isSignup = !isSignup;
+      updateFormMode();
+    });
+
+    function updateFormMode() {
+      if (isSignup) {
+        formTitle.textContent = 'Create your account';
+        submitBtn.textContent = 'Sign Up';
+        toggleMsg.innerHTML = 'Already have an account? <a id="toggleLink">Log in</a>';
+      } else {
+        formTitle.textContent = 'Welcome back';
+        submitBtn.textContent = 'Log In';
+        toggleMsg.innerHTML = 'Don\'t have an account? <a id="toggleLink">Sign up</a>';
+      }
+      document.getElementById('toggleLink').addEventListener('click', () => {
+        isSignup = !isSignup;
+        updateFormMode();
+      });
+      hideError();
+    }
+
+    // ── Error handling ──
+    function showError(msg) {
+      errorMsg.textContent = msg;
+      errorMsg.classList.add('visible');
+    }
+
+    function hideError() {
+      errorMsg.textContent = '';
+      errorMsg.classList.remove('visible');
+    }
+
+    // ── Form submit ──
+    authForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      hideError();
+
+      const email = emailInput.value.trim();
+      const password = passwordInput.value;
+
+      if (!email || !password) {
+        showError('Please fill in all fields.');
+        return;
+      }
+
+      if (password.length < 8) {
+        showError('Password must be at least 8 characters.');
+        return;
+      }
+
+      const endpoint = isSignup ? '/auth/signup' : '/auth/login';
+      submitBtn.disabled = true;
+      submitBtn.textContent = isSignup ? 'Creating account...' : 'Logging in...';
+
+      try {
+        const res = await fetch(AUTH_API_URL + endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password }),
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          showError(data.error || 'Something went wrong. Please try again.');
+          submitBtn.disabled = false;
+          submitBtn.textContent = isSignup ? 'Sign Up' : 'Log In';
+          return;
+        }
+
+        // Success -- show token
+        showToken(data.authToken);
+      } catch (err) {
+        showError('Network error. Please check your connection and try again.');
+        submitBtn.disabled = false;
+        submitBtn.textContent = isSignup ? 'Sign Up' : 'Log In';
+      }
+    });
+
+    // ── Show token view ──
+    function showToken(token) {
+      authCard.style.display = 'none';
+      tokenCard.style.display = 'block';
+      tokenValue.textContent = token;
+    }
+
+    // ── Copy to clipboard ──
+    copyBtn.addEventListener('click', async () => {
+      const token = tokenValue.textContent;
+      try {
+        await navigator.clipboard.writeText(token);
+        copiedToast.classList.add('visible');
+        copyBtn.textContent = 'Copied!';
+        setTimeout(() => {
+          copiedToast.classList.remove('visible');
+          copyBtn.textContent = 'Copy';
+        }, 2000);
+      } catch {
+        // Fallback for older browsers
+        const textarea = document.createElement('textarea');
+        textarea.value = token;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+        copiedToast.classList.add('visible');
+        copyBtn.textContent = 'Copied!';
+        setTimeout(() => {
+          copiedToast.classList.remove('visible');
+          copyBtn.textContent = 'Copy';
+        }, 2000);
+      }
+    });
+  </script>
+</body>
+</html>

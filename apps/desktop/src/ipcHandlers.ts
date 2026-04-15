@@ -1,6 +1,5 @@
-import { app, ipcMain, desktopCapturer } from "electron";
+import { app, ipcMain, desktopCapturer, BrowserWindow } from "electron";
 import * as path from "path";
-import type { BrowserWindow } from "electron";
 import {
   getUnprocessedFiles,
   getCurrentFile,
@@ -44,6 +43,15 @@ import {
   setupIdleProcessing,
 } from "./processing";
 import { getLocalGrant, setLocalScopes, revokeLocalGrant } from "./grants";
+import { detectInstalledMcpApps, registerMcpWithApps, isMcpRegistered } from "./mcpRegistration";
+import {
+  setTunnelStateListener,
+  getTunnelState,
+  startTunnel,
+  stopTunnel,
+  provisionTunnelCredentials,
+} from "./tunnel";
+import { readCredentials, writeCredentials, hasCredentials } from "@context-manager/config";
 
 export function setMainWindow(win: BrowserWindow): void {
   setMainWindowRef(win);
@@ -52,6 +60,7 @@ export function setMainWindow(win: BrowserWindow): void {
 export function setupIpc(): void {
   app.once("before-quit", () => {
     stopHotBuffer();
+    stopTunnel();
   });
 
   setupIdleProcessing();
@@ -200,5 +209,32 @@ export function setupIpc(): void {
 
   ipcMain.handle("update-ai-settings", (_event, payload: Partial<AISettings>) => {
     return writeAISettings(payload || {});
+  });
+
+  // ── Credentials ──────────────────────────────────────────────────────────
+  ipcMain.handle("has-credentials", () => hasCredentials());
+  ipcMain.handle("get-credentials", () => readCredentials());
+  ipcMain.handle("save-credentials", (_event, creds: { authToken: string; accountEmail?: string; tunnelId?: string }) => {
+    writeCredentials(creds);
+    return { success: true };
+  });
+
+  // ── MCP Registration ─────────────────────────────────────────────────────
+  ipcMain.handle("detect-mcp-apps", () => detectInstalledMcpApps());
+  ipcMain.handle("register-mcp-apps", (_event, appNames: string[]) => registerMcpWithApps(appNames));
+  ipcMain.handle("is-mcp-registered", (_event, appName: string) => isMcpRegistered(appName));
+
+  // ── Tunnel ───────────────────────────────────────────────────────────────
+  ipcMain.handle("get-tunnel-state", () => getTunnelState());
+  ipcMain.handle("provision-tunnel", () => provisionTunnelCredentials());
+  ipcMain.handle("start-tunnel", () => startTunnel());
+  ipcMain.handle("stop-tunnel", () => stopTunnel());
+
+  // Forward tunnel state changes to the renderer process
+  setTunnelStateListener((state) => {
+    const win = BrowserWindow.getAllWindows()[0];
+    if (win) {
+      win.webContents.send("tunnel-state", state);
+    }
   });
 }

@@ -1,0 +1,12 @@
+name = "vizlog-mcp-proxy"
+main = "src/index.ts"
+compatibility_date = "2024-12-01"
+
+[vars]
+AUTH_SERVICE_URL = "https://vizlog-auth.vizlog.workers.dev"
+TUNNEL_DOMAIN = "tunnels.vizlog.ai"
+
+# Secrets (set via wrangler secret put):
+# CF_ACCOUNT_ID — Cloudflare account ID
+# CF_TUNNEL_API_TOKEN — Cloudflare API token with tunnel permissions
+# VIZLOG_TUNNEL_SECRET — shared secret for local server auth

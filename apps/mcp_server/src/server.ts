@@ -2,6 +2,9 @@
 import "./loadEnv";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { createServer, IncomingMessage, ServerResponse } from "node:http";
+import { randomUUID } from "node:crypto";
 import { CONTEXT_ROOT } from "@context-manager/config";
 import { z } from "zod";
 import { handleSearch } from "./handlers/search";
@@ -89,10 +92,120 @@ function createMcpServer(): McpServer {
 // ── Bootstrap ───────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
+  const args = process.argv.slice(2);
+  const httpMode = args.includes("--http");
+  const portIdx = args.indexOf("--port");
+  const port = portIdx >= 0 ? parseInt(args[portIdx + 1], 10) : 3847;
+
   const server = createMcpServer();
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
-  log("Basis MCP server connected via stdio");
+
+  if (httpMode) {
+    // Map of session ID -> transport for stateful session management
+    const transports = new Map<string, StreamableHTTPServerTransport>();
+
+    const tunnelSecret = process.env.VIZLOG_TUNNEL_SECRET;
+
+    const httpServer = createServer(
+      async (req: IncomingMessage, res: ServerResponse) => {
+        // Only accept requests to /mcp
+        const url = new URL(req.url ?? "/", `http://${req.headers.host}`);
+        if (url.pathname !== "/mcp") {
+          res.writeHead(404, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Not found" }));
+          return;
+        }
+
+        // Validate tunnel secret if configured
+        if (tunnelSecret) {
+          const provided = req.headers["x-vizlog-tunnel-secret"];
+          if (provided !== tunnelSecret) {
+            res.writeHead(401, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "Unauthorized" }));
+            return;
+          }
+        }
+
+        const method = req.method?.toUpperCase();
+
+        // Handle DELETE for session termination
+        if (method === "DELETE") {
+          const sessionId = req.headers["mcp-session-id"] as string | undefined;
+          if (sessionId && transports.has(sessionId)) {
+            const transport = transports.get(sessionId)!;
+            await transport.close();
+            transports.delete(sessionId);
+            res.writeHead(200);
+            res.end();
+          } else {
+            res.writeHead(404, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "Session not found" }));
+          }
+          return;
+        }
+
+        // For GET and POST, look up existing session or create new one
+        const sessionId = req.headers["mcp-session-id"] as string | undefined;
+
+        if (sessionId && transports.has(sessionId)) {
+          // Existing session -- route to its transport
+          const transport = transports.get(sessionId)!;
+          await transport.handleRequest(req, res);
+          return;
+        }
+
+        if (sessionId && !transports.has(sessionId)) {
+          // Client sent an unknown session ID
+          res.writeHead(404, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Session not found" }));
+          return;
+        }
+
+        // No session ID -- this should be an initialization request (POST)
+        if (method !== "POST") {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({ error: "Missing session ID for non-POST request" })
+          );
+          return;
+        }
+
+        // Create a new stateful transport for this session
+        const transport = new StreamableHTTPServerTransport({
+          sessionIdGenerator: () => randomUUID(),
+        });
+
+        transport.onclose = () => {
+          const sid = transport.sessionId;
+          if (sid) {
+            transports.delete(sid);
+            log(`Session ${sid} closed`);
+          }
+        };
+
+        // Connect the MCP server to this transport
+        const sessionServer = createMcpServer();
+        await sessionServer.connect(transport);
+
+        // Store the transport keyed by session ID (available after handleRequest)
+        await transport.handleRequest(req, res);
+
+        const newSessionId = transport.sessionId;
+        if (newSessionId) {
+          transports.set(newSessionId, transport);
+          log(`New session: ${newSessionId}`);
+        }
+      }
+    );
+
+    httpServer.listen(port, "127.0.0.1", () => {
+      log(`Basis MCP server listening on http://127.0.0.1:${port}/mcp`);
+    });
+  } else {
+    // Default: stdio
+    const transport = new StdioServerTransport();
+    await server.connect(transport);
+    log("Basis MCP server connected via stdio");
+  }
 }
 
 main().catch((err) => {

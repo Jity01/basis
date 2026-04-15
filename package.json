@@ -21,6 +21,7 @@
     "node": ">=18"
   },
   "dependencies": {
-    "@fission-ai/openspec": "^1.2.0"
+    "@fission-ai/openspec": "^1.2.0",
+    "wrangler": "^4.82.2"
   }
 }
