@@ -1,10 +1,3 @@
-// ── AI Settings ──────────────────────────────────────────────────────────────
-
-/** Fireworks-only. Key used when `FIREWORKS_API_KEY` is not set in the environment. */
-export type AISettings = {
-  fireworksApiKey?: string;
-};
-
 // ── Chunk Settings ───────────────────────────────────────────────────────────
 
 export type ChunkSettings = {
@@ -62,7 +55,6 @@ export type ProcessBacklogProgress =
 
 export type ProcessBacklogOptions = {
   onProgress?: (progress: ProcessBacklogProgress) => void;
-  aiSettings?: AISettings;
 };
 
 // ── Scopes & Grants (used by desktop app for MCP access control) ────────────

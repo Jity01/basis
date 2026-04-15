@@ -8,7 +8,7 @@ const path = require("path");
 
 const env = { ...process.env };
 delete env.ELECTRON_RUN_AS_NODE;
-env.VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL || "http://127.0.0.1:5173";
+env.VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL || "http://localhost:5173";
 
 const electronBinary = require("electron");
 const child = spawn(electronBinary, ["."], {

@@ -1,6 +1,9 @@
 export interface Env {
+  AUTH_SERVICE?: Fetcher;
   AUTH_SERVICE_URL: string;
   TUNNEL_DOMAIN: string;
+  CF_ZONE_NAME?: string;
+  CF_ZONE_ID?: string;
   CF_ACCOUNT_ID: string;
   CF_TUNNEL_API_TOKEN: string;
   VIZLOG_TUNNEL_SECRET: string;
@@ -11,6 +14,7 @@ const ALLOWED_ORIGINS = [
   "https://www.vizlog.ai",
   "http://localhost:3000",
   "http://localhost:5173",
+  "http://127.0.0.1:5173",
 ];
 
 type SessionUser = {
@@ -27,6 +31,40 @@ type OAuthUser = {
   clientId: string;
   scope?: string;
 };
+
+function normalizeBaseUrl(url: string): string {
+  return url.replace(/\/+$/, "");
+}
+
+function normalizeTunnelLabel(tunnelId: string): string {
+  const label = tunnelId
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+  if (!label) {
+    throw new Error("Invalid tunnel ID label.");
+  }
+  return label;
+}
+
+function getUserTunnelHostname(tunnelId: string, tunnelDomain: string): string {
+  return `${normalizeTunnelLabel(tunnelId)}.${tunnelDomain}`;
+}
+
+function cloudflareHeaders(env: Env): Record<string, string> {
+  return {
+    Authorization: `Bearer ${env.CF_TUNNEL_API_TOKEN}`,
+    "Content-Type": "application/json",
+  };
+}
+
+function fetchAuth(env: Env, pathWithQuery: string, init?: RequestInit): Promise<Response> {
+  if (env.AUTH_SERVICE) {
+    return env.AUTH_SERVICE.fetch(`https://auth.internal${pathWithQuery}`, init);
+  }
+  return fetch(`${normalizeBaseUrl(env.AUTH_SERVICE_URL)}${pathWithQuery}`, init);
+}
 
 function corsHeaders(request: Request): Record<string, string> {
   const origin = request.headers.get("Origin") || "";
@@ -58,7 +96,7 @@ function extractBearerToken(request: Request): string | null {
 
 async function validateSessionToken(token: string, env: Env): Promise<SessionUser | null> {
   try {
-    const resp = await fetch(`${env.AUTH_SERVICE_URL}/auth/me`, {
+    const resp = await fetchAuth(env, "/auth/me", {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!resp.ok) return null;
@@ -70,7 +108,7 @@ async function validateSessionToken(token: string, env: Env): Promise<SessionUse
 
 async function validateOAuthToken(token: string, env: Env): Promise<OAuthUser | null> {
   try {
-    const resp = await fetch(`${env.AUTH_SERVICE_URL}/oauth/me`, {
+    const resp = await fetchAuth(env, "/oauth/me", {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!resp.ok) return null;
@@ -80,17 +118,13 @@ async function validateOAuthToken(token: string, env: Env): Promise<OAuthUser | 
   }
 }
 
-function tunnelUrl(tunnelId: string, tunnelDomain: string, pathWithQuery: string): string {
-  return `https://${tunnelId}.${tunnelDomain}${pathWithQuery}`;
-}
-
 async function proxyToTunnel(
   request: Request,
-  user: { email: string; tunnelId: string },
+  user: { email: string; tunnelHostname: string },
   env: Env,
   targetPathWithQuery: string,
 ): Promise<Response> {
-  const url = tunnelUrl(user.tunnelId, env.TUNNEL_DOMAIN, targetPathWithQuery);
+  const url = `https://${user.tunnelHostname}${targetPathWithQuery}`;
 
   const headers = new Headers(request.headers);
   headers.set("X-Vizlog-Tunnel-Secret", env.VIZLOG_TUNNEL_SECRET);
@@ -136,11 +170,171 @@ async function handleMcpRequest(request: Request, userId: string, env: Env): Pro
     return errorResponse(request, "Invalid OAuth access token", 401);
   }
 
+  const tunnelHostname = getUserTunnelHostname(oauthUser.tunnelId, env.TUNNEL_DOMAIN);
+
   if (userId !== "me" && userId !== oauthUser.tunnelId) {
     return errorResponse(request, "Forbidden user resource", 403);
   }
 
-  return proxyToTunnel(request, oauthUser, env, `/mcp${url.search}`);
+  return proxyToTunnel(request, { email: oauthUser.email, tunnelHostname }, env, `/mcp${url.search}`);
+}
+
+type CloudflareTunnelResult = {
+  id: string;
+  credentials_file: {
+    AccountTag: string;
+    TunnelID: string;
+    TunnelSecret: string;
+  };
+};
+
+async function createTunnel(env: Env, tunnelName: string, tunnelSecretB64: string): Promise<Response> {
+  return fetch(`https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/tunnels`, {
+    method: "POST",
+    headers: cloudflareHeaders(env),
+    body: JSON.stringify({
+      name: tunnelName,
+      tunnel_secret: tunnelSecretB64,
+    }),
+  });
+}
+
+async function deleteExistingTunnelByName(env: Env, tunnelName: string): Promise<void> {
+  const listResp = await fetch(
+    `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/tunnels?name=${encodeURIComponent(tunnelName)}`,
+    {
+      headers: {
+        Authorization: `Bearer ${env.CF_TUNNEL_API_TOKEN}`,
+      },
+    },
+  );
+  if (!listResp.ok) {
+    return;
+  }
+
+  const listBody = (await listResp.json()) as {
+    success?: boolean;
+    result?: Array<{ id: string; name: string }>;
+  };
+  const matches = (listBody.result || []).filter((item) => item.name === tunnelName);
+  await Promise.all(
+    matches.map((item) =>
+      fetch(`https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/tunnels/${item.id}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${env.CF_TUNNEL_API_TOKEN}`,
+        },
+      }),
+    ),
+  );
+}
+
+type CloudflareApiResponse<T> = {
+  success: boolean;
+  errors?: Array<{ code?: number; message?: string }>;
+  result?: T;
+};
+
+async function getZoneId(env: Env): Promise<string> {
+  if (env.CF_ZONE_ID?.trim()) {
+    return env.CF_ZONE_ID.trim();
+  }
+
+  const zoneName = (env.CF_ZONE_NAME || env.TUNNEL_DOMAIN || "").trim();
+  if (!zoneName) {
+    throw new Error("Missing CF_ZONE_ID or CF_ZONE_NAME.");
+  }
+
+  const resp = await fetch(`https://api.cloudflare.com/client/v4/zones?name=${encodeURIComponent(zoneName)}`, {
+    headers: {
+      Authorization: `Bearer ${env.CF_TUNNEL_API_TOKEN}`,
+    },
+  });
+  if (!resp.ok) {
+    throw new Error(`Failed to fetch zone ID (${resp.status}).`);
+  }
+
+  const body = (await resp.json()) as CloudflareApiResponse<Array<{ id: string }>>;
+  const zoneId = body.result?.[0]?.id;
+  if (!body.success || !zoneId) {
+    throw new Error(`Failed to resolve zone ID for ${zoneName}.`);
+  }
+  return zoneId;
+}
+
+async function upsertTunnelDnsRecord(env: Env, hostname: string, tunnelUuid: string): Promise<void> {
+  const zoneId = await getZoneId(env);
+  const target = `${tunnelUuid}.cfargotunnel.com`;
+
+  const existingResp = await fetch(
+    `https://api.cloudflare.com/client/v4/zones/${zoneId}/dns_records?type=CNAME&name=${encodeURIComponent(hostname)}`,
+    {
+      headers: {
+        Authorization: `Bearer ${env.CF_TUNNEL_API_TOKEN}`,
+      },
+    },
+  );
+  if (!existingResp.ok) {
+    throw new Error(`Failed to query DNS records (${existingResp.status}).`);
+  }
+
+  const existingBody = (await existingResp.json()) as CloudflareApiResponse<Array<{ id: string }>>;
+  if (!existingBody.success) {
+    throw new Error("Cloudflare DNS lookup failed.");
+  }
+
+  const existingId = existingBody.result?.[0]?.id;
+  const method = existingId ? "PUT" : "POST";
+  const endpoint = existingId
+    ? `https://api.cloudflare.com/client/v4/zones/${zoneId}/dns_records/${existingId}`
+    : `https://api.cloudflare.com/client/v4/zones/${zoneId}/dns_records`;
+
+  const upsertResp = await fetch(endpoint, {
+    method,
+    headers: cloudflareHeaders(env),
+    body: JSON.stringify({
+      type: "CNAME",
+      name: hostname,
+      content: target,
+      proxied: true,
+      ttl: 1,
+    }),
+  });
+
+  if (!upsertResp.ok) {
+    throw new Error(`Failed to upsert DNS record (${upsertResp.status}).`);
+  }
+  const upsertBody = (await upsertResp.json()) as CloudflareApiResponse<{ id: string }>;
+  if (!upsertBody.success) {
+    const msg = upsertBody.errors?.[0]?.message || "Cloudflare DNS upsert failed.";
+    throw new Error(msg);
+  }
+}
+
+async function createTunnelWithConflictRecovery(
+  env: Env,
+  tunnelName: string,
+  tunnelSecretB64: string,
+): Promise<CloudflareTunnelResult> {
+  let createResp = await createTunnel(env, tunnelName, tunnelSecretB64);
+  if (createResp.status === 409) {
+    await deleteExistingTunnelByName(env, tunnelName);
+    createResp = await createTunnel(env, tunnelName, tunnelSecretB64);
+  }
+
+  if (!createResp.ok) {
+    const body = await createResp.text();
+    throw new Error(`Cloudflare create tunnel failed (${createResp.status}): ${body.slice(0, 1000)}`);
+  }
+
+  const parsed = (await createResp.json()) as {
+    success: boolean;
+    result?: CloudflareTunnelResult;
+  };
+  if (!parsed.success || !parsed.result) {
+    throw new Error("Cloudflare API returned an invalid tunnel response");
+  }
+  return parsed.result;
 }
 
 async function handleTunnelProvision(request: Request, env: Env): Promise<Response> {
@@ -157,72 +351,19 @@ async function handleTunnelProvision(request: Request, env: Env): Promise<Respon
   const tunnelSecretBytes = crypto.getRandomValues(new Uint8Array(32));
   const tunnelSecretB64 = btoa(String.fromCharCode(...tunnelSecretBytes));
 
-  let cfTunnelResp: Response;
+  let tunnel: CloudflareTunnelResult;
   try {
-    cfTunnelResp = await fetch(`https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/tunnels`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${env.CF_TUNNEL_API_TOKEN}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        name: user.tunnelId,
-        tunnel_secret: tunnelSecretB64,
-      }),
-    });
+    tunnel = await createTunnelWithConflictRecovery(env, user.tunnelId, tunnelSecretB64);
   } catch {
-    return errorResponse(request, "Failed to connect to Cloudflare API", 502);
-  }
-
-  if (!cfTunnelResp.ok) {
-    const errBody = await cfTunnelResp.text();
-    if (cfTunnelResp.status === 409) {
-      return errorResponse(request, "Tunnel already exists for this account", 409);
-    }
-    console.error("Cloudflare tunnel creation failed:", cfTunnelResp.status, errBody);
     return errorResponse(request, "Failed to provision tunnel", 502);
   }
-
-  const cfResult = (await cfTunnelResp.json()) as {
-    success: boolean;
-    result: {
-      id: string;
-      credentials_file: {
-        AccountTag: string;
-        TunnelID: string;
-        TunnelSecret: string;
-      };
-    };
-  };
-
-  if (!cfResult.success) {
-    return errorResponse(request, "Cloudflare API returned an error", 502);
-  }
-
-  const tunnel = cfResult.result;
-  const hostname = `${user.tunnelId}.${env.TUNNEL_DOMAIN}`;
+  const hostname = getUserTunnelHostname(user.tunnelId, env.TUNNEL_DOMAIN);
 
   try {
-    await fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/tunnels/${tunnel.id}/configurations`,
-      {
-        method: "PUT",
-        headers: {
-          Authorization: `Bearer ${env.CF_TUNNEL_API_TOKEN}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          config: {
-            ingress: [
-              { hostname, service: "http://localhost:3847" },
-              { service: "http_status:404" },
-            ],
-          },
-        }),
-      },
-    );
-  } catch {
-    console.error("Failed to configure tunnel DNS route");
+    await upsertTunnelDnsRecord(env, hostname, tunnel.id);
+  } catch (err) {
+    console.error("Failed to configure tunnel DNS route:", err);
+    return errorResponse(request, "Failed to configure tunnel DNS", 502);
   }
 
   return jsonResponse(
@@ -235,6 +376,7 @@ async function handleTunnelProvision(request: Request, env: Env): Promise<Respon
         TunnelSecret: tunnel.credentials_file.TunnelSecret,
       },
       hostname,
+      endpointUrl: `https://${hostname}`,
     },
     201,
   );
@@ -242,15 +384,14 @@ async function handleTunnelProvision(request: Request, env: Env): Promise<Respon
 
 async function passthroughToAuth(request: Request, env: Env, authPath: string): Promise<Response> {
   const incomingUrl = new URL(request.url);
-  const upstreamUrl = `${env.AUTH_SERVICE_URL}${authPath}${incomingUrl.search}`;
-
   const headers = new Headers(request.headers);
   headers.delete("host");
 
-  const upstream = await fetch(upstreamUrl, {
+  const upstream = await fetchAuth(env, `${authPath}${incomingUrl.search}`, {
     method: request.method,
     headers,
     body: request.method === "GET" ? undefined : request.body,
+    redirect: "manual",
   });
 
   const responseHeaders = new Headers(upstream.headers);
@@ -271,7 +412,7 @@ function authServerMetadata(request: Request, env: Env): Response {
     grant_types_supported: ["authorization_code"],
     token_endpoint_auth_methods_supported: ["none"],
     code_challenge_methods_supported: ["S256"],
-    upstream_authorization_server: env.AUTH_SERVICE_URL,
+    upstream_authorization_server: normalizeBaseUrl(env.AUTH_SERVICE_URL),
   });
 }
 
@@ -279,7 +420,7 @@ function protectedResourceMetadata(request: Request, env: Env): Response {
   const origin = new URL(request.url).origin;
   return jsonResponse(request, {
     resource: origin,
-    authorization_servers: [env.AUTH_SERVICE_URL],
+    authorization_servers: [origin],
     bearer_methods_supported: ["header"],
   });
 }
@@ -322,7 +463,7 @@ export default {
       if (path === "/register" && request.method === "POST") {
         return passthroughToAuth(request, env, "/oauth/register");
       }
-      if (path === "/authorize" && request.method === "GET") {
+      if (path === "/authorize" && (request.method === "GET" || request.method === "POST")) {
         return passthroughToAuth(request, env, "/oauth/authorize");
       }
       if (path === "/token" && request.method === "POST") {

@@ -1,7 +1,6 @@
 /// <reference types="vite/client" />
 
 import type {
-  AISettings,
   ChunkSettings,
   ContextScope,
   ExclusionsConfig,
@@ -19,6 +18,9 @@ interface ContextManagerAPI {
   registerMcpApps: (appNames: string[]) => Promise<Record<string, { success: boolean; error?: string }>>;
   provisionTunnel: () => Promise<{ success: boolean; error?: string }>;
   startTunnel: () => Promise<{ enabled: boolean; status: string; publicUrl: string | null; error: string | null }>;
+  onTunnelState: (
+    callback: (state: { enabled: boolean; status: string; publicUrl: string | null; error: string | null }) => void
+  ) => () => void;
   // Recording
   startRecording: () => Promise<{ success: boolean; filePath: string }>;
   stopRecording: () => Promise<{ success: boolean }>;
@@ -45,10 +47,6 @@ interface ContextManagerAPI {
   getLocalGrant: () => Promise<ScopeGrant>;
   setLocalScopes: (scopes: ContextScope[]) => Promise<ScopeGrant>;
   revokeLocalGrant: () => Promise<boolean>;
-  getMcpServerPath: () => Promise<string>;
-  // AI settings
-  getAISettings: () => Promise<AISettings>;
-  updateAISettings: (settings: Partial<AISettings>) => Promise<AISettings>;
 }
 
 declare global {

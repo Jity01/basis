@@ -5,7 +5,6 @@ export * from "./storage";
 export * from "./segmentWiki";
 export * from "./wikiApply";
 export * from "./wikiQueue";
-export * from "./aiSettings";
 export * from "./chunkSettings";
 export * from "./hotbuffer";
 export * from "./exclusions";

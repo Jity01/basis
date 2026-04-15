@@ -7,6 +7,7 @@ const ALLOWED_ORIGINS = [
   "https://www.vizlog.ai",
   "http://localhost:3000",
   "http://localhost:5173",
+  "http://127.0.0.1:5173",
 ];
 
 const AUTH_CODE_TTL_SECONDS = 300;
@@ -150,19 +151,28 @@ function extractBearerToken(request: Request, expectedPrefix?: string): string |
   return token;
 }
 
-type SessionUser = { id: number; email: string; tunnel_id: string; created_at: string };
+type SessionUser = {
+  id: number;
+  email: string;
+  tunnel_id: string;
+  created_at: string;
+  tunnel_endpoint: string | null;
+};
 
 async function getSessionUserFromAuthToken(request: Request, env: Env): Promise<SessionUser | null> {
   const token = extractBearerToken(request, "jr_");
   if (!token) return null;
   const tokenHash = await sha256Hex(token);
-  return env.DB.prepare("SELECT id, email, tunnel_id, created_at FROM users WHERE auth_token_hash = ?")
+  return env.DB.prepare(
+    "SELECT u.id, u.email, u.tunnel_id, u.created_at, te.endpoint_url AS tunnel_endpoint FROM users u LEFT JOIN tunnel_endpoints te ON te.user_id = u.id WHERE u.auth_token_hash = ?",
+  )
     .bind(tokenHash)
     .first<SessionUser>();
 }
 
 type OauthClient = {
   client_id: string;
+  client_name: string | null;
   redirect_uris_json: string;
   grant_types_json: string;
   response_types_json: string;
@@ -171,10 +181,19 @@ type OauthClient = {
 
 async function getOauthClient(env: Env, clientId: string): Promise<OauthClient | null> {
   return env.DB.prepare(
-    "SELECT client_id, redirect_uris_json, grant_types_json, response_types_json, token_endpoint_auth_method FROM oauth_clients WHERE client_id = ?",
+    "SELECT client_id, client_name, redirect_uris_json, grant_types_json, response_types_json, token_endpoint_auth_method FROM oauth_clients WHERE client_id = ?",
   )
     .bind(clientId)
     .first<OauthClient>();
+}
+
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 function safeJsonArray(raw: string): string[] {
@@ -188,6 +207,24 @@ function safeJsonArray(raw: string): string[] {
 
 function getAuthServerOrigin(request: Request): string {
   return new URL(request.url).origin;
+}
+
+function normalizeTunnelEndpointUrl(value: unknown): string | null {
+  const raw = typeof value === "string" ? value.trim() : "";
+  if (!raw) return null;
+
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return null;
+  }
+
+  if (parsed.protocol !== "https:") {
+    return null;
+  }
+
+  return `${parsed.origin}`;
 }
 
 async function handleSignup(request: Request, env: Env): Promise<Response> {
@@ -262,6 +299,7 @@ async function handleMe(request: Request, env: Env): Promise<Response> {
   return jsonResponse(request, {
     email: user.email,
     tunnelId: user.tunnel_id,
+    tunnelEndpoint: user.tunnel_endpoint,
     createdAt: user.created_at,
   });
 }
@@ -289,6 +327,36 @@ async function handleRevoke(request: Request, env: Env): Promise<Response> {
     .run();
 
   return jsonResponse(request, { success: true });
+}
+
+async function handleTunnelEndpointUpdate(request: Request, env: Env): Promise<Response> {
+  const user = await getSessionUserFromAuthToken(request, env);
+  if (!user) return errorResponse(request, "Missing or invalid authorization token", 401);
+
+  let body: { endpointUrl?: string | null };
+  try {
+    body = await request.json();
+  } catch {
+    return errorResponse(request, "Invalid JSON body", 400);
+  }
+
+  const endpointUrl = normalizeTunnelEndpointUrl(body.endpointUrl);
+  if (body.endpointUrl && !endpointUrl) {
+    return errorResponse(request, "endpointUrl must be a valid HTTPS URL", 400);
+  }
+
+  if (!endpointUrl) {
+    await env.DB.prepare("DELETE FROM tunnel_endpoints WHERE user_id = ?").bind(user.id).run();
+    return jsonResponse(request, { success: true, tunnelEndpoint: null });
+  }
+
+  await env.DB.prepare(
+    "INSERT INTO tunnel_endpoints (user_id, endpoint_url, updated_at) VALUES (?, ?, datetime('now')) ON CONFLICT(user_id) DO UPDATE SET endpoint_url = excluded.endpoint_url, updated_at = datetime('now')",
+  )
+    .bind(user.id, endpointUrl)
+    .run();
+
+  return jsonResponse(request, { success: true, tunnelEndpoint: endpointUrl });
 }
 
 async function handleOAuthServerMetadata(request: Request): Promise<Response> {
@@ -363,37 +431,163 @@ async function handleOAuthRegister(request: Request, env: Env): Promise<Response
   );
 }
 
-async function handleOAuthAuthorize(request: Request, env: Env): Promise<Response> {
-  const user = await getSessionUserFromAuthToken(request, env);
-  if (!user) return oauthErrorResponse(request, "access_denied", 401, "User session token is required");
+type OAuthParams = {
+  responseType: string;
+  clientId: string;
+  redirectUri: string;
+  state?: string;
+  codeChallenge: string;
+  codeChallengeMethod: string;
+  scope?: string;
+  resource?: string;
+};
 
-  const url = new URL(request.url);
-  const responseType = url.searchParams.get("response_type") || "";
-  const clientId = url.searchParams.get("client_id") || "";
-  const redirectUri = url.searchParams.get("redirect_uri") || "";
-  const state = url.searchParams.get("state") || undefined;
-  const codeChallenge = url.searchParams.get("code_challenge") || "";
-  const codeChallengeMethod = url.searchParams.get("code_challenge_method") || "";
-  const scope = url.searchParams.get("scope") || undefined;
-  const resource = url.searchParams.get("resource") || undefined;
+function renderOAuthLoginPage(
+  request: Request,
+  params: OAuthParams,
+  opts?: { error?: string; email?: string; clientName?: string },
+): Response {
+  const e = escapeHtml;
+  const errorHtml = opts?.error
+    ? `<div class="error-msg visible">${e(opts.error)}</div>`
+    : `<div class="error-msg"></div>`;
+  const emailVal = opts?.email ? e(opts.email) : "";
+  const clientLabel = opts?.clientName ? e(opts.clientName) : e(params.clientId);
 
-  if (responseType !== "code") {
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vizlog - Sign In to Authorize</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f0f1a; color: #e0e0e0; min-height: 100vh;
+      display: flex; align-items: center; justify-content: center; padding: 20px;
+    }
+    .container { width: 100%; max-width: 400px; }
+    .logo { text-align: center; margin-bottom: 40px; font-size: 28px; font-weight: 700; color: #fff; letter-spacing: -0.5px; }
+    .card { background: #1a1a2e; border-radius: 12px; padding: 32px; border: 1px solid #2a2a3e; }
+    .card h2 { font-size: 20px; font-weight: 600; color: #fff; margin-bottom: 8px; }
+    .client-info { font-size: 13px; color: #a0a0b0; margin-bottom: 24px; }
+    .form-group { margin-bottom: 16px; }
+    .form-group label { display: block; font-size: 14px; color: #a0a0b0; margin-bottom: 6px; }
+    .form-group input[type="email"],
+    .form-group input[type="password"] {
+      width: 100%; padding: 10px 14px; background: #12121e; border: 1px solid #2a2a3e;
+      border-radius: 8px; color: #e0e0e0; font-size: 15px; outline: none; transition: border-color 0.2s;
+    }
+    .form-group input:focus { border-color: #6c63ff; }
+    .btn {
+      width: 100%; padding: 12px; background: #6c63ff; color: #fff; border: none;
+      border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; transition: background 0.2s; margin-top: 8px;
+    }
+    .btn:hover { background: #5a52d5; }
+    .error-msg {
+      background: #2e1a1a; border: 1px solid #5a2a2a; color: #ff6b6b;
+      padding: 10px 14px; border-radius: 8px; font-size: 14px; margin-bottom: 16px; display: none;
+    }
+    .error-msg.visible { display: block; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="logo">Vizlog</div>
+    <div class="card">
+      <h2>Sign in to authorize</h2>
+      <div class="client-info">${clientLabel} is requesting access to your Vizlog context.</div>
+      ${errorHtml}
+      <form method="POST" action="">
+        <input type="hidden" name="response_type" value="${e(params.responseType)}">
+        <input type="hidden" name="client_id" value="${e(params.clientId)}">
+        <input type="hidden" name="redirect_uri" value="${e(params.redirectUri)}">
+        <input type="hidden" name="code_challenge" value="${e(params.codeChallenge)}">
+        <input type="hidden" name="code_challenge_method" value="${e(params.codeChallengeMethod)}">
+        ${params.state ? `<input type="hidden" name="state" value="${e(params.state)}">` : ""}
+        ${params.scope ? `<input type="hidden" name="scope" value="${e(params.scope)}">` : ""}
+        ${params.resource ? `<input type="hidden" name="resource" value="${e(params.resource)}">` : ""}
+        <div class="form-group">
+          <label for="email">Email</label>
+          <input type="email" id="email" name="email" autocomplete="email" required value="${emailVal}">
+        </div>
+        <div class="form-group">
+          <label for="password">Password</label>
+          <input type="password" id="password" name="password" autocomplete="current-password" minlength="8" required>
+        </div>
+        <button type="submit" class="btn">Sign In</button>
+      </form>
+    </div>
+  </div>
+</body>
+</html>`;
+
+  return new Response(html, {
+    status: opts?.error ? 200 : 200,
+    headers: {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "no-store, no-cache",
+      ...corsHeaders(request),
+    },
+  });
+}
+
+function parseOAuthParamsFromQuery(url: URL): OAuthParams {
+  return {
+    responseType: url.searchParams.get("response_type") || "",
+    clientId: url.searchParams.get("client_id") || "",
+    redirectUri: url.searchParams.get("redirect_uri") || "",
+    state: url.searchParams.get("state") || undefined,
+    codeChallenge: url.searchParams.get("code_challenge") || "",
+    codeChallengeMethod: url.searchParams.get("code_challenge_method") || "",
+    scope: url.searchParams.get("scope") || undefined,
+    resource: url.searchParams.get("resource") || undefined,
+  };
+}
+
+function parseOAuthParamsFromForm(form: URLSearchParams): OAuthParams {
+  return {
+    responseType: form.get("response_type") || "",
+    clientId: form.get("client_id") || "",
+    redirectUri: form.get("redirect_uri") || "",
+    state: form.get("state") || undefined,
+    codeChallenge: form.get("code_challenge") || "",
+    codeChallengeMethod: form.get("code_challenge_method") || "",
+    scope: form.get("scope") || undefined,
+    resource: form.get("resource") || undefined,
+  };
+}
+
+function validateOAuthParams(
+  request: Request,
+  params: OAuthParams,
+): Response | null {
+  if (params.responseType !== "code") {
     return oauthErrorResponse(request, "unsupported_response_type", 400, "response_type must be code");
   }
-  if (!clientId || !redirectUri || !codeChallenge) {
+  if (!params.clientId || !params.redirectUri || !params.codeChallenge) {
     return oauthErrorResponse(request, "invalid_request", 400, "client_id, redirect_uri, and code_challenge are required");
   }
-  if (codeChallengeMethod !== "S256") {
+  if (params.codeChallengeMethod !== "S256") {
     return oauthErrorResponse(request, "invalid_request", 400, "code_challenge_method must be S256");
   }
+  return null;
+}
 
-  const client = await getOauthClient(env, clientId);
+async function generateAuthCodeAndRedirect(
+  request: Request,
+  env: Env,
+  userId: number,
+  params: OAuthParams,
+): Promise<Response> {
+  const client = await getOauthClient(env, params.clientId);
   if (!client) {
     return oauthErrorResponse(request, "unauthorized_client", 400, "Unknown client_id");
   }
 
   const redirectUris = safeJsonArray(client.redirect_uris_json);
-  if (!redirectUris.includes(redirectUri)) {
+  if (!redirectUris.includes(params.redirectUri)) {
     return oauthErrorResponse(request, "invalid_redirect_uri", 400, "redirect_uri is not registered");
   }
 
@@ -404,21 +598,21 @@ async function handleOAuthAuthorize(request: Request, env: Env): Promise<Respons
   )
     .bind(
       codeHash,
-      user.id,
-      clientId,
-      redirectUri,
-      codeChallenge,
-      codeChallengeMethod,
-      scope || null,
-      resource || null,
-      state || null,
+      userId,
+      params.clientId,
+      params.redirectUri,
+      params.codeChallenge,
+      params.codeChallengeMethod,
+      params.scope || null,
+      params.resource || null,
+      params.state || null,
       expiresIso(AUTH_CODE_TTL_SECONDS),
     )
     .run();
 
-  const redirect = new URL(redirectUri);
+  const redirect = new URL(params.redirectUri);
   redirect.searchParams.set("code", code);
-  if (state) redirect.searchParams.set("state", state);
+  if (params.state) redirect.searchParams.set("state", params.state);
   return new Response(null, {
     status: 302,
     headers: {
@@ -426,6 +620,77 @@ async function handleOAuthAuthorize(request: Request, env: Env): Promise<Respons
       ...corsHeaders(request),
     },
   });
+}
+
+async function handleOAuthAuthorize(request: Request, env: Env): Promise<Response> {
+  // Case A: GET with valid Bearer token (backward-compatible programmatic flow)
+  if (request.method === "GET") {
+    const user = await getSessionUserFromAuthToken(request, env);
+    if (user) {
+      const params = parseOAuthParamsFromQuery(new URL(request.url));
+      const validationError = validateOAuthParams(request, params);
+      if (validationError) return validationError;
+      return generateAuthCodeAndRedirect(request, env, user.id, params);
+    }
+
+    // Case B: GET without Bearer token (browser flow — show login page)
+    const params = parseOAuthParamsFromQuery(new URL(request.url));
+    const validationError = validateOAuthParams(request, params);
+    if (validationError) return validationError;
+
+    const client = await getOauthClient(env, params.clientId);
+    if (!client) {
+      return oauthErrorResponse(request, "unauthorized_client", 400, "Unknown client_id");
+    }
+    const redirectUris = safeJsonArray(client.redirect_uris_json);
+    if (!redirectUris.includes(params.redirectUri)) {
+      return oauthErrorResponse(request, "invalid_redirect_uri", 400, "redirect_uri is not registered");
+    }
+
+    return renderOAuthLoginPage(request, params, {
+      clientName: client.client_name || undefined,
+    });
+  }
+
+  // Case C: POST (login form submission)
+  if (request.method === "POST") {
+    const contentType = request.headers.get("Content-Type") || "";
+    if (!contentType.includes("application/x-www-form-urlencoded")) {
+      return oauthErrorResponse(request, "invalid_request", 400, "Expected form submission");
+    }
+
+    const form = new URLSearchParams(await request.text());
+    const email = (form.get("email") || "").toLowerCase().trim();
+    const password = form.get("password") || "";
+    const params = parseOAuthParamsFromForm(form);
+
+    const validationError = validateOAuthParams(request, params);
+    if (validationError) return validationError;
+
+    if (!email || !password) {
+      return renderOAuthLoginPage(request, params, {
+        error: "Email and password are required.",
+        email,
+      });
+    }
+
+    const dbUser = await env.DB.prepare("SELECT id, password_hash FROM users WHERE email = ?")
+      .bind(email)
+      .first<{ id: number; password_hash: string }>();
+
+    if (!dbUser || !(await verifyPassword(password, dbUser.password_hash))) {
+      const client = await getOauthClient(env, params.clientId);
+      return renderOAuthLoginPage(request, params, {
+        error: "Invalid email or password.",
+        email,
+        clientName: client?.client_name || undefined,
+      });
+    }
+
+    return generateAuthCodeAndRedirect(request, env, dbUser.id, params);
+  }
+
+  return oauthErrorResponse(request, "invalid_request", 405, "Method not allowed");
 }
 
 async function parseTokenRequestBody(request: Request): Promise<URLSearchParams | null> {
@@ -528,7 +793,7 @@ async function handleOauthAccessMe(request: Request, env: Env): Promise<Response
 
   const tokenHash = await sha256Hex(token);
   const row = await env.DB.prepare(
-    "SELECT t.client_id, t.scope, t.expires_at, t.revoked_at, u.id AS user_id, u.email, u.tunnel_id, u.created_at FROM oauth_access_tokens t JOIN users u ON u.id = t.user_id WHERE t.token_hash = ?",
+    "SELECT t.client_id, t.scope, t.expires_at, t.revoked_at, u.id AS user_id, u.email, u.tunnel_id, u.created_at, te.endpoint_url AS tunnel_endpoint FROM oauth_access_tokens t JOIN users u ON u.id = t.user_id LEFT JOIN tunnel_endpoints te ON te.user_id = u.id WHERE t.token_hash = ?",
   )
     .bind(tokenHash)
     .first<{
@@ -540,6 +805,7 @@ async function handleOauthAccessMe(request: Request, env: Env): Promise<Response
       email: string;
       tunnel_id: string;
       created_at: string;
+      tunnel_endpoint: string | null;
     }>();
 
   if (!row || row.revoked_at || new Date(row.expires_at).getTime() <= Date.now()) {
@@ -550,6 +816,7 @@ async function handleOauthAccessMe(request: Request, env: Env): Promise<Response
     userId: row.user_id,
     email: row.email,
     tunnelId: row.tunnel_id,
+    tunnelEndpoint: row.tunnel_endpoint,
     createdAt: row.created_at,
     clientId: row.client_id,
     scope: row.scope,
@@ -578,6 +845,9 @@ export default {
       if (path === "/auth/signup" && request.method === "POST") return await handleSignup(request, env);
       if (path === "/auth/login" && request.method === "POST") return await handleLogin(request, env);
       if (path === "/auth/me" && request.method === "GET") return await handleMe(request, env);
+      if (path === "/auth/tunnel-endpoint" && request.method === "POST") {
+        return await handleTunnelEndpointUpdate(request, env);
+      }
       if (path === "/auth/token/refresh" && request.method === "POST") return await handleTokenRefresh(request, env);
       if (path === "/auth/revoke" && request.method === "POST") return await handleRevoke(request, env);
 
@@ -588,7 +858,7 @@ export default {
         return await handleProtectedResourceMetadata(request);
       }
       if (path === "/oauth/register" && request.method === "POST") return await handleOAuthRegister(request, env);
-      if (path === "/oauth/authorize" && request.method === "GET") return await handleOAuthAuthorize(request, env);
+      if (path === "/oauth/authorize" && (request.method === "GET" || request.method === "POST")) return await handleOAuthAuthorize(request, env);
       if (path === "/oauth/token" && request.method === "POST") return await handleOAuthToken(request, env);
       if (path === "/oauth/me" && request.method === "GET") return await handleOauthAccessMe(request, env);
 

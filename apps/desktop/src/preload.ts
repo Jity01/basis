@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { AISettings, ContextScope } from "@context-manager/config";
+import type { ContextScope } from "@context-manager/config";
 
 contextBridge.exposeInMainWorld("contextManager", {
   startRecording: () => ipcRenderer.invoke("start-recording"),
@@ -64,10 +64,6 @@ contextBridge.exposeInMainWorld("contextManager", {
   getLocalGrant: () => ipcRenderer.invoke("get-local-grant"),
   setLocalScopes: (scopes: ContextScope[]) => ipcRenderer.invoke("set-local-scopes", scopes),
   revokeLocalGrant: () => ipcRenderer.invoke("revoke-local-grant"),
-  getMcpServerPath: () => ipcRenderer.invoke("get-mcp-server-path"),
-  // AI settings
-  getAISettings: () => ipcRenderer.invoke("get-ai-settings"),
-  updateAISettings: (settings: Partial<AISettings>) => ipcRenderer.invoke("update-ai-settings", settings),
 
   // Credentials
   hasCredentials: () => ipcRenderer.invoke("has-credentials"),

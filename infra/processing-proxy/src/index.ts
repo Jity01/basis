@@ -1,4 +1,5 @@
 export interface Env {
+  AUTH_SERVICE?: Fetcher;
   FIREWORKS_API_KEY: string;  // Secret — set via: wrangler secret put FIREWORKS_API_KEY
   ANTHROPIC_API_KEY: string;  // Secret — set via: wrangler secret put ANTHROPIC_API_KEY
   AUTH_SERVICE_URL: string;
@@ -6,7 +7,24 @@ export interface Env {
   ANTHROPIC_BASE_URL: string;
 }
 
-const ALLOWED_ORIGINS = ["https://vizlog.ai", "https://www.vizlog.ai", "http://localhost:3000", "http://localhost:5173"];
+const ALLOWED_ORIGINS = [
+  "https://vizlog.ai",
+  "https://www.vizlog.ai",
+  "http://localhost:3000",
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+];
+
+function normalizeBaseUrl(url: string): string {
+  return url.replace(/\/+$/, "");
+}
+
+function fetchAuth(env: Env, path: string, init?: RequestInit): Promise<Response> {
+  if (env.AUTH_SERVICE) {
+    return env.AUTH_SERVICE.fetch(`https://auth.internal${path}`, init);
+  }
+  return fetch(`${normalizeBaseUrl(env.AUTH_SERVICE_URL)}${path}`, init);
+}
 
 function getCorsHeaders(request: Request): Record<string, string> {
   const origin = request.headers.get("Origin") || "";
@@ -32,10 +50,10 @@ function corsResponse(status: number, body: string, request: Request): Response 
  */
 async function validateToken(
   token: string,
-  authServiceUrl: string
+  env: Env
 ): Promise<{ email: string; tunnelId?: string } | null> {
   try {
-    const res = await fetch(`${authServiceUrl}/auth/me`, {
+    const res = await fetchAuth(env, "/auth/me", {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) return null;
@@ -54,13 +72,19 @@ export default {
     }
 
     // --- 1. Extract and validate auth token ---
+    // Accept token from Authorization: Bearer or x-api-key (Anthropic SDK sends x-api-key by default)
     const authHeader = request.headers.get("Authorization");
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    const xApiKey = request.headers.get("x-api-key");
+    let token: string | null = null;
+    if (authHeader?.startsWith("Bearer ")) {
+      token = authHeader.slice("Bearer ".length);
+    } else if (xApiKey) {
+      token = xApiKey;
+    }
+    if (!token) {
       return corsResponse(401, JSON.stringify({ error: "Missing authorization token" }), request);
     }
-
-    const token = authHeader.slice("Bearer ".length);
-    const authResult = await validateToken(token, env.AUTH_SERVICE_URL);
+    const authResult = await validateToken(token, env);
     if (!authResult) {
       return corsResponse(401, JSON.stringify({ error: "Invalid or expired token" }), request);
     }

@@ -12,7 +12,6 @@ type AuthMode = "signup" | "login";
 type AppInfo = {
   name: string;
   installed: boolean;
-  checked: boolean;
 };
 
 type AppResult = {
@@ -21,7 +20,15 @@ type AppResult = {
   error?: string;
 };
 
-const AUTH_API_URL = "https://vizlog-auth.vizlog.workers.dev";
+function formatTunnelStatus(state: { enabled: boolean; status: string; error: string | null }): string {
+  if (state.status === "connected") return "connected";
+  if (state.status === "starting" || state.status === "reconnecting") return "starting...";
+  if (state.error) return state.error;
+  if (!state.enabled) return "not available";
+  return state.status;
+}
+
+const AUTH_API_URL = import.meta.env.VITE_AUTH_API_URL?.trim() || "https://vizlog-auth.vizlog.workers.dev";
 
 export default function Onboarding({ onComplete }: OnboardingProps) {
   const [step, setStep] = useState<Step>("auth");
@@ -104,17 +111,29 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
         body: JSON.stringify({ email: email.trim(), password }),
       });
 
-      const data = await res.json();
+      let data: { error?: string; authToken?: string; email?: string; tunnelId?: string } = {};
+      try {
+        data = (await res.json()) as { error?: string; authToken?: string; email?: string; tunnelId?: string };
+      } catch {
+        // Keep default empty payload for non-JSON responses.
+      }
 
       if (!res.ok) {
         setAuthError(data.error || `${authMode === "signup" ? "Sign up" : "Login"} failed.`);
         setAuthLoading(false);
         return;
       }
+      if (!data.authToken) {
+        setAuthError("Auth service response was missing an auth token.");
+        setAuthLoading(false);
+        return;
+      }
+
+      const authToken = data.authToken;
 
       // Save the token
       await contextManager.saveCredentials({
-        authToken: data.authToken,
+        authToken,
         accountEmail: data.email,
         tunnelId: data.tunnelId,
       });
@@ -125,8 +144,8 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
       }
 
       setStep("apps");
-    } catch (err) {
-      setAuthError("Could not reach server. Check your internet connection.");
+    } catch {
+      setAuthError(`Could not reach auth service at ${AUTH_API_URL}.`);
     } finally {
       setAuthLoading(false);
     }
@@ -137,89 +156,83 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
     if (step !== "apps") return;
     let cancelled = false;
     setDetectingApps(true);
-    contextManager
-      .detectMcpApps()
-      .then((detected) => {
-        if (cancelled) return;
-        const knownApps = ["Claude Desktop", "Cursor", "Claude Code"];
-        const appList = knownApps.map((name) => ({
+
+    const autoConfigureApps = async (): Promise<void> => {
+      const knownApps = ["Claude Desktop", "Cursor", "Claude Code"];
+
+      let appList: AppInfo[];
+      try {
+        const detected = await contextManager.detectMcpApps();
+        appList = knownApps.map((name) => ({
           name,
           installed: detected.includes(name),
-          checked: detected.includes(name),
         }));
-        setApps(appList);
-      })
-      .catch(() => {
+      } catch {
+        appList = knownApps.map((name) => ({ name, installed: false }));
+      }
+
+      if (cancelled) return;
+      setApps(appList);
+      setDetectingApps(false);
+
+      const selected = appList.filter((app) => app.installed).map((app) => app.name);
+      if (selected.length === 0) {
+        setAppResults([]);
+        setStep("ready");
+        return;
+      }
+
+      setConnectingApps(true);
+      try {
+        const results = await contextManager.registerMcpApps(selected);
         if (cancelled) return;
-        // API not implemented yet -- show defaults with none detected
-        setApps([
-          { name: "Claude Desktop", installed: false, checked: false },
-          { name: "Cursor", installed: false, checked: false },
-          { name: "Claude Code", installed: false, checked: false },
-        ]);
-      })
-      .finally(() => {
-        if (!cancelled) setDetectingApps(false);
-      });
+        const resultList: AppResult[] = selected.map((name) => ({
+          name,
+          success: results[name]?.success ?? false,
+          error: results[name]?.error,
+        }));
+        setAppResults(resultList);
+      } catch {
+        if (cancelled) return;
+        setAppResults(selected.map((name) => ({ name, success: false, error: "Automatic setup failed" })));
+      } finally {
+        if (!cancelled) {
+          setConnectingApps(false);
+          setStep("ready");
+        }
+      }
+    };
+
+    void autoConfigureApps();
+
     return () => {
       cancelled = true;
     };
   }, [step]);
 
-  const toggleApp = useCallback((name: string) => {
-    setApps((prev) =>
-      prev.map((app) =>
-        app.name === name && app.installed ? { ...app, checked: !app.checked } : app
-      )
-    );
-  }, []);
-
-  const handleConnectApps = useCallback(async () => {
-    const selected = apps.filter((a) => a.checked).map((a) => a.name);
-    if (selected.length === 0) {
-      setStep("ready");
-      return;
-    }
-    setConnectingApps(true);
-    try {
-      const results = await contextManager.registerMcpApps(selected);
-      const resultList: AppResult[] = selected.map((name) => ({
-        name,
-        success: results[name]?.success ?? false,
-        error: results[name]?.error,
-      }));
-      setAppResults(resultList);
-      setStep("ready");
-    } catch {
-      // API not implemented yet -- proceed anyway
-      setAppResults(
-        selected.map((name) => ({ name, success: true }))
-      );
-      setStep("ready");
-    } finally {
-      setConnectingApps(false);
-    }
-  }, [apps]);
-
   // Step 3: Start tunnel on mount
   useEffect(() => {
     if (step !== "ready") return;
     let cancelled = false;
+    setTunnelStatus("starting...");
+
+    const unsubscribe = contextManager.onTunnelState((state) => {
+      if (cancelled) return;
+      setTunnelStatus(formatTunnelStatus(state));
+    });
+
     contextManager
       .startTunnel()
       .then((result) => {
         if (cancelled) return;
-        if (result.enabled) {
-          setTunnelStatus("connected");
-        } else {
-          setTunnelStatus(result.error || "not available");
-        }
+        setTunnelStatus(formatTunnelStatus(result));
       })
       .catch(() => {
         if (!cancelled) setTunnelStatus("not available");
       });
     return () => {
       cancelled = true;
+      unsubscribe();
     };
   }, [step]);
 
@@ -372,9 +385,9 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
         {/* Step 2: Connect AI Apps */}
         {step === "apps" && (
           <div className="onboarding-step">
-            <h1 className="onboarding-title">Connect your AI apps</h1>
+            <h1 className="onboarding-title">Configuring your AI apps</h1>
             <p className="onboarding-subtitle">
-              We'll configure each app so it can search your screen history.
+              Vizlog is auto-configuring supported desktop clients.
             </p>
 
             {detectingApps ? (
@@ -382,44 +395,19 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
             ) : (
               <div className="onboarding-app-list">
                 {apps.map((app) => (
-                  <label
+                  <div
                     key={app.name}
                     className={`onboarding-app-row ${!app.installed ? "is-disabled" : ""}`}
                   >
-                    <input
-                      type="checkbox"
-                      checked={app.checked}
-                      disabled={!app.installed}
-                      onChange={() => toggleApp(app.name)}
-                    />
                     <span className="onboarding-app-name">{app.name}</span>
-                    {!app.installed && (
-                      <span className="onboarding-app-badge">not installed</span>
-                    )}
-                  </label>
+                    <span className="onboarding-app-badge">
+                      {!app.installed ? "not installed" : connectingApps ? "configuring" : "configured"}
+                    </span>
+                  </div>
                 ))}
               </div>
             )}
-
-            <button
-              className="button button-primary onboarding-continue-button"
-              onClick={() => void handleConnectApps()}
-              disabled={connectingApps || detectingApps}
-              type="button"
-            >
-              {connectingApps ? "Connecting..." : "Connect Selected"}
-            </button>
-
-            <button
-              className="button button-ghost onboarding-skip-button"
-              onClick={() => {
-                setAppResults([]);
-                setStep("ready");
-              }}
-              type="button"
-            >
-              Skip for now
-            </button>
+            {(detectingApps || connectingApps) && <p className="onboarding-hint">Finalizing setup...</p>}
           </div>
         )}
 
