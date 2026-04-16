@@ -87,6 +87,10 @@ nav { display: flex; align-items: center; justify-content: space-between; paddin
 
 /* VIDEO */
 .video-section { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 4rem 3rem; border-bottom: 0.5px solid var(--border); }
+.video-frame { position: relative; width: 100%; max-width: 960px; padding: 18px; border-radius: 14px; background: linear-gradient(135deg, #C8964A 0%, #A0722A 30%, #8B5E3C 60%, #C8964A 100%); box-shadow: 0 4px 24px rgba(139,94,60,0.25), inset 0 1px 0 rgba(232,192,122,0.4); }
+.video-frame::before { content: ''; position: absolute; inset: 6px; border-radius: 10px; border: 1px solid rgba(232,192,122,0.3); pointer-events: none; }
+.video-frame::after { content: ''; position: absolute; inset: 0; border-radius: 14px; background: repeating-linear-gradient(90deg, transparent, transparent 18px, rgba(139,94,60,0.12) 18px, rgba(139,94,60,0.12) 19px); pointer-events: none; }
+.video-frame video { display: block; width: 100%; border-radius: 6px; }
 
 /* QUOTES */
 .quotes-section { padding: 4rem 3rem; border-bottom: 0.5px solid var(--border); }
@@ -150,8 +154,9 @@ footer span { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--m
 @media (max-width: 860px) {
 .split { grid-template-columns: 1fr; }
 .hero { border-right: none; border-bottom: 0.5px solid var(--border); padding: 2.5rem 1.5rem; }
-.demo-section { padding: 1.5rem; }
-.demo-box { height: 360px; }
+.split { flex: none; }
+.demo-section { display: none; }
+.hero { border-bottom: none; padding: 2rem 1.5rem; }
 .demo-client { font-size: 9px; padding: 0.25rem 0.5rem; }
 .memory-grid { grid-template-columns: 1fr; }
 .nav-tags { display: none; }
@@ -290,10 +295,37 @@ footer span { font-size: 10px; }
 </div>
 
 <div class="video-section" id="demo-video">
-  <div style="width:100%;max-width:800px;aspect-ratio:16/9;background:var(--paper);border:0.5px solid var(--border);border-radius:4px;display:flex;align-items:center;justify-content:center;">
-    <span style="font-family:'DM Mono',monospace;font-size:12px;color:var(--muted);letter-spacing:0.08em;">video coming soon</span>
+  <p style="font-family:'DM Mono',monospace;font-size:11px;letter-spacing:0.1em;color:var(--muted);text-transform:lowercase;margin-bottom:1.5rem;">see it in 21 seconds</p>
+  <div class="video-frame has-leaves">
+    <div class="section-leaves" style="left:-50px;">
+      <div class="section-leaf"><svg width="36" height="52" viewBox="0 0 36 52" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 48C4 48 2 28 18 12C34 -4 34 4 34 4C34 4 36 24 20 40C4 56 4 48 4 48Z" fill="#7faa45"/><path d="M4 48C14 32 24 18 34 4" stroke="#5a7a2e" stroke-width="1" opacity="0.6"/></svg></div>
+      <div class="section-leaf"><svg width="30" height="44" viewBox="0 0 30 44" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 40C3 40 1 24 15 10C29 -4 28 3 28 3C28 3 30 20 16 34C2 48 3 40 3 40Z" fill="#5a7a2e"/><path d="M3 40C12 27 20 15 28 3" stroke="#4a6a24" stroke-width="1" opacity="0.5"/></svg></div>
+      <div class="section-leaf"><svg width="32" height="48" viewBox="0 0 32 48" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 44C4 44 0 26 16 12C32 -2 30 6 30 6C30 6 34 24 18 38C2 52 4 44 4 44Z" fill="#8bb84a"/><path d="M4 44C14 30 22 18 30 6" stroke="#6a9a35" stroke-width="1" opacity="0.5"/></svg></div>
+      <div class="section-leaf"><svg width="28" height="40" viewBox="0 0 28 40" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 36C3 36 1 20 14 8C27 -4 26 3 26 3C26 3 28 20 15 32C2 44 3 36 3 36Z" fill="#7faa45"/><path d="M3 36C11 24 18 14 26 3" stroke="#5a7a2e" stroke-width="1" opacity="0.6"/></svg></div>
+      <div class="section-leaf"><svg width="34" height="46" viewBox="0 0 34 46" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 42C4 42 1 24 17 10C33 -4 32 5 32 5C32 5 35 23 19 37C3 51 4 42 4 42Z" fill="#5a7a2e"/><path d="M4 42C14 28 22 16 32 5" stroke="#4a6a24" stroke-width="1" opacity="0.5"/></svg></div>
+      <div class="section-leaf"><svg width="30" height="42" viewBox="0 0 30 42" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 38C3 38 1 22 14 9C27 -4 26 4 26 4C26 4 28 21 15 34C2 47 3 38 3 38Z" fill="#8bb84a"/><path d="M3 38C11 26 18 15 26 4" stroke="#6a9a35" stroke-width="1" opacity="0.5"/></svg></div>
+      <div class="section-leaf"><svg width="34" height="50" viewBox="0 0 34 50" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 46C4 46 1 27 17 12C33 -3 32 5 32 5C32 5 35 24 19 39C3 54 4 46 4 46Z" fill="#7faa45"/><path d="M4 46C14 31 22 18 32 5" stroke="#5a7a2e" stroke-width="1" opacity="0.6"/></svg></div>
+      <div class="section-leaf"><svg width="28" height="38" viewBox="0 0 28 38" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 34C3 34 1 19 13 8C25 -3 24 4 24 4C24 4 26 19 14 30C2 41 3 34 3 34Z" fill="#5a7a2e"/><path d="M3 34C10 23 16 14 24 4" stroke="#4a6a24" stroke-width="1" opacity="0.5"/></svg></div>
+      <div class="section-leaf"><svg width="32" height="46" viewBox="0 0 32 46" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 42C4 42 1 25 16 11C31 -3 30 5 30 5C30 5 33 23 18 37C3 51 4 42 4 42Z" fill="#8bb84a"/><path d="M4 42C13 29 21 17 30 5" stroke="#6a9a35" stroke-width="1" opacity="0.5"/></svg></div>
+      <div class="section-leaf"><svg width="30" height="44" viewBox="0 0 30 44" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 40C3 40 1 24 15 10C29 -4 28 3 28 3C28 3 30 20 16 34C2 48 3 40 3 40Z" fill="#7faa45"/><path d="M3 40C12 27 20 15 28 3" stroke="#5a7a2e" stroke-width="1" opacity="0.6"/></svg></div>
+    </div>
+    <video id="demo-vid" controls muted playsinline webkit-playsinline x-webkit-airplay="allow">
+      <source src="vizlog_demo.mp4" type="video/mp4">
+    </video>
   </div>
 </div>
+<script>
+(function(){
+  var vid = document.getElementById('demo-vid');
+  var observer = new IntersectionObserver(function(entries){
+    entries.forEach(function(e){
+      if(e.isIntersecting) vid.play();
+      else vid.pause();
+    });
+  }, {threshold: 0.4});
+  observer.observe(vid);
+})();
+</script>
 
 <div class="how-section">
   <div class="section" id="how">
@@ -350,7 +382,7 @@ footer span { font-size: 10px; }
           <div class="log-step-content">
             <div class="pipeline-num">03 —</div>
             <div class="pipeline-name">retrieve</div>
-            <div class="pipeline-body">the MCP server plugs your context into whatever agent you already use. no new interface to learn, nothing leaves your machine.</div>
+            <div class="pipeline-body">the MCP server plugs your context into whatever agent you already use. no new interface to learn.</div>
           </div>
         </div>
       </div>
@@ -381,7 +413,7 @@ footer span { font-size: 10px; }
     <div class="memory-card">
       <div class="memory-card-label">right now</div>
       <div class="memory-card-num"><em>&lt;5</em> MB</div>
-      <div class="memory-card-sub">the last 60 seconds of your screen, held in memory. always fresh, never saved to disk.</div>
+      <div class="memory-card-sub">the last 60 seconds of your screen, held in memory. always fresh.</div>
     </div>
   </div>
 </div>
@@ -419,8 +451,8 @@ footer span { font-size: 10px; }
     <div class="quote-item">
       <span class="quote-mark">"</span>
       <div>
-        <p class="quote-text">I wish agents were more proactive and knew more about me. Having to re-explain everything every time I need a task done is exhausting.</p>
-        <p class="quote-who">product manager</p>
+        <p class="quote-text">I wish agents were more proactive and knew more about me. Having to re-explain everything every time I need a task done is annoying.</p>
+        <p class="quote-who">founder</p>
       </div>
     </div>
     <div class="quote-item">
@@ -433,7 +465,7 @@ footer span { font-size: 10px; }
     <div class="quote-item" style="grid-column:1/-1">
       <span class="quote-mark">"</span>
       <div>
-        <p class="quote-text">Information that matters to me is everywhere — my X feed, my code, my AI chats. Email and calendar tools just don't cut deep enough.</p>
+        <p class="quote-text">Information that matters to me is everywhere: my X feed, my code, my AI chats. Email and calendar tools just don't cut deep enough.</p>
         <p class="quote-who">founder</p>
       </div>
     </div>
@@ -447,12 +479,39 @@ footer span { font-size: 10px; }
   <a href="https://cal.com/vizlog" style="font-family:'DM Mono',monospace;font-size:13px;letter-spacing:0.05em;padding:0.85rem 2.5rem;background:var(--ink);color:var(--paper);border-radius:2px;text-decoration:none;" onmouseover="this.style.opacity=0.8" onmouseout="this.style.opacity=1">talk to a founder</a>
 </div>
 
+<div class="log-divider" id="logDivider2">
+  <div class="log-grass">
+    <svg viewBox="0 0 1440 20" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:20px;display:block;position:absolute;bottom:22px;">
+      <path d="M0 20 C20 8,40 14,60 10 C80 6,100 15,120 11 C140 7,160 13,180 9 C200 5,220 14,240 10 C260 6,280 13,300 9 C320 5,340 14,360 11 C380 8,400 13,420 8 C440 3,460 14,480 10 C500 6,520 13,540 9 C560 5,580 14,600 10 C620 6,640 13,660 8 C680 3,700 14,720 10 C740 6,760 12,780 8 C800 4,820 13,840 9 C860 5,880 14,900 10 C920 6,940 13,960 8 C980 3,1000 14,1020 10 C1040 6,1060 13,1080 9 C1100 5,1120 14,1140 10 C1160 6,1180 12,1200 8 C1220 4,1240 13,1260 9 C1280 5,1300 14,1320 10 C1340 6,1360 13,1380 8 C1400 3,1420 13,1440 9 L1440 20 Z" fill="#5a7a2e"/>
+      <path d="M0 20 C15 12,35 18,55 13 C75 8,95 17,115 13 C135 9,155 17,175 13 C195 9,215 16,235 12 C255 8,275 17,295 13 C315 9,335 16,355 12 C375 8,395 17,415 12 C435 7,455 16,475 12 C495 8,515 16,535 12 C555 8,575 16,595 12 C615 8,635 16,655 11 C675 6,695 16,715 12 C735 8,755 15,775 11 C795 7,815 16,835 12 C855 8,875 15,895 11 C915 7,935 16,955 12 C975 8,995 15,1015 11 C1035 7,1055 16,1075 12 C1095 8,1115 15,1135 11 C1155 7,1175 15,1195 11 C1215 7,1235 15,1255 11 C1275 7,1295 15,1315 11 C1335 7,1355 15,1375 10 C1395 5,1415 15,1440 11 L1440 20 Z" fill="#7faa45"/>
+    </svg>
+    <div class="log-ground"></div>
+  </div>
+  <svg class="log-roller" id="logRoller2" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+    <ellipse cx="100" cy="100" rx="100" ry="100" fill="#8B5E3C"/>
+    <ellipse cx="100" cy="100" rx="88" ry="88" fill="#A0722A"/>
+    <ellipse cx="100" cy="100" rx="74" ry="74" fill="#C8964A"/>
+    <ellipse cx="100" cy="100" rx="58" ry="58" fill="#D9A85C"/>
+    <ellipse cx="100" cy="100" rx="42" ry="42" fill="#E8C07A"/>
+    <ellipse cx="100" cy="100" rx="26" ry="26" fill="#F2D490"/>
+    <ellipse cx="68" cy="92" rx="16" ry="17" fill="white"/>
+    <ellipse cx="132" cy="92" rx="16" ry="17" fill="white"/>
+    <g id="logEyes2">
+      <ellipse cx="68" cy="92" rx="10" ry="11" fill="#1a1a1a"/>
+      <ellipse cx="132" cy="92" rx="10" ry="11" fill="#1a1a1a"/>
+      <ellipse cx="71" cy="89" rx="4" ry="4" fill="white"/>
+      <ellipse cx="135" cy="89" rx="4" ry="4" fill="white"/>
+    </g>
+    <path d="M 76 118 Q 100 132 124 118" stroke="#7a5020" stroke-width="5" fill="none" stroke-linecap="round"/>
+  </svg>
+</div>
+
 <footer>
   <span>© 2026 Basis Labs, Inc. All rights reserved.</span>
   <div style="display:flex;gap:1.5rem;">
-    <a href="https://github.com/vizlog" style="font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);text-decoration:none;">github</a>
-    <a href="https://twitter.com/vizlog" style="font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);text-decoration:none;">twitter</a>
-    <a href="https://linkedin.com/company/vizlog" style="font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);text-decoration:none;">linkedin</a>
+    <a href="https://github.com/Jity01/basis" style="font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);text-decoration:none;">github</a>
+    <a href="https://twitter.com/justreheat" style="font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);text-decoration:none;">twitter</a>
+    <a href="https://linkedin.com/company/justreheat" style="font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);text-decoration:none;">linkedin</a>
   </div>
 </footer>
 
@@ -466,20 +525,20 @@ var clients = {
 var convos = {
   cursor: [
     { role: 'user', text: "do you think any of the tools i saw on x this morning should be added to this project?" },
-    { role: 'ai',   text: "From your screen this morning, you had openspec, betterauth, and starsling open on x.com. All three are solid. Given where this project is:" },
-    { role: 'ai',   text: "Add openspec now. It enforces spec driven development with approval workflows before AI starts coding. Since you're about to onboard contributors, this will keep everyone aligned without you having to review every line." },
-    { role: 'ai',   text: "Betterauth is a great pick for when you build the dashboard. Full auth library for TypeScript with SSO, passkeys, and social login baked in. It'll save you weeks." },
-    { role: 'ai',   text: "Add starsling too. It automates deploys and incident response with AI agents. Even with one service on Railway right now, it can auto triage errors from Sentry and open PRs with fixes. That alone is worth it." }
+    { role: 'ai',   text: "from your screen this morning, you had openspec, betterauth, and starsling open on x.com. all three are solid. given where this project is:" },
+    { role: 'ai',   text: "add openspec now. it enforces spec driven development with approval workflows before AI starts coding. since you're about to onboard contributors, this will keep everyone aligned without you having to review every line." },
+    { role: 'ai',   text: "betterauth is a great pick for when you build the dashboard. full auth library for TypeScript with SSO, passkeys, and social login baked in. it'll save you weeks." },
+    { role: 'ai',   text: "add starsling too. it automates deploys and incident response with AI agents. even with one service on Railway right now, it can auto triage errors from Sentry and open PRs with fixes. that alone is worth it." }
   ],
   claude: [
     { role: 'user', text: "my railway deploy keeps failing, any idea why?" },
-    { role: 'ai',   text: "I can see the Railway error on your screen. Build failed at the install step. You set the root directory to services/api, but that folder doesn't have its own package.json." },
-    { role: 'ai',   text: "Easiest fix: point Railway at the monorepo root and set the start command to node services/api/server.js." }
+    { role: 'ai',   text: "i can see the Railway error on your screen. build failed at the install step. you set the root directory to services/api, but that folder doesn't have its own package.json." },
+    { role: 'ai',   text: "easiest fix: point Railway at the monorepo root and set the start command to node services/api/server.js." }
   ],
   chatgpt: [
     { role: 'user', text: "how should I respond to kana's email?" },
-    { role: 'ai',   text: "I can see her reply in your Gmail. She said 'tell me more about how the context manager works.' From her LinkedIn, she's a founding engineer at a YC company. Her posts are mostly about agent infra and MCP tooling. Definitely knows the space." },
-    { role: 'ai',   text: "Looking at how she responded to you, she's pretty direct and skips the fluff. I'd match that energy. Tell her vizlog captures your screen locally, turns it into structured text, and exposes it via MCP so any agent can use it. Offer a quick demo and leave it at that." }
+    { role: 'ai',   text: "i can see her reply in your Gmail. she said 'tell me more about how the context manager works.' from her LinkedIn, she's a founding engineer at a YC company. her posts are mostly about agent infra and MCP tooling. definitely knows the space." },
+    { role: 'ai',   text: "looking at how she responded to you, she's pretty direct and skips the fluff. i'd match that energy. tell her vizlog captures your screen locally, turns it into structured text, and exposes it via MCP so any agent can use it. offer a quick demo and leave it at that." }
   ]
 };
 
@@ -545,6 +604,72 @@ window.addEventListener('load', function() { renderConvo(); });
   function init() {
     x = divider.clientWidth * 0.25;
     angle = 0; dir = 1; blinking = false;
+    roller.style.transition = 'none';
+    eyes.style.transition = 'none';
+    eyes.style.transform = '';
+    step();
+  }
+
+  function minX() { return divider.clientWidth * 0.25; }
+  function maxX() { return divider.clientWidth * 0.75; }
+
+  function blink(cb) {
+    blinking = true;
+    var n = 0;
+    function once() {
+      eyes.style.transition = 'transform 0.06s';
+      eyes.style.transformOrigin = '100px 92px';
+      eyes.style.transform = 'scaleY(0.08)';
+      setTimeout(function() {
+        eyes.style.transform = 'scaleY(1)';
+        setTimeout(function() { n++; if (n < 2) { setTimeout(once, 100); } else { blinking = false; cb(); } }, 90);
+      }, 65);
+    }
+    setTimeout(once, 150);
+  }
+
+  function step() {
+    cancelAnimationFrame(rafId);
+    var degPerPx = 360 / (Math.PI * SIZE);
+    function frame() {
+      x += dir * SPEED;
+      angle += dir * SPEED * degPerPx;
+      var atRight = x >= maxX();
+      var atLeft = x <= minX();
+      if (atRight || atLeft) {
+        x = atRight ? maxX() : minX();
+        draw();
+        blink(function() { dir *= -1; step(); });
+        return;
+      }
+      draw();
+      rafId = requestAnimationFrame(frame);
+    }
+    rafId = requestAnimationFrame(frame);
+  }
+
+  function draw() {
+    roller.style.left = x + 'px';
+    roller.style.bottom = '30px';
+    roller.style.top = 'auto';
+    roller.style.transform = 'rotate(' + angle + 'deg)';
+  }
+
+  window.addEventListener('load', init);
+  window.addEventListener('resize', function() { cancelAnimationFrame(rafId); init(); });
+})();
+
+// LOG ROLLER 2
+(function() {
+  var divider = document.getElementById('logDivider2');
+  var roller = document.getElementById('logRoller2');
+  var eyes = document.getElementById('logEyes2');
+  var SIZE = 56, SPEED = 1.4;
+  var x, angle, dir, blinking, rafId;
+
+  function init() {
+    x = divider.clientWidth * 0.75;
+    angle = 0; dir = -1; blinking = false;
     roller.style.transition = 'none';
     eyes.style.transition = 'none';
     eyes.style.transform = '';
