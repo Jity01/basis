@@ -2,7 +2,7 @@
   "name": "@context-manager/desktop",
   "version": "0.0.1",
   "private": true,
-  "description": "Local-first screen context capture for AI (JustReheat desktop)",
+  "description": "Local-first screen context capture for AI (Vizlog desktop)",
   "author": "Basis Labs",
   "main": "dist-main/main.js",
   "scripts": {

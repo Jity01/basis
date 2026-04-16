@@ -31,3 +31,6 @@ tasks/
 
 # Scratch/temp directories
 .tmp-context/
+
+# Test output artifacts
+packages/core/tests/outputs/
