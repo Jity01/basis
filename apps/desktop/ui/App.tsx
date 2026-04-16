@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import type {
   ProcessingStatus,
-  AISettings,
   ExclusionEntry,
   ExclusionsConfig,
   SckitExclusionsInitState,
@@ -10,12 +9,11 @@ import Onboarding from "./Onboarding";
 
 const contextManager = window.contextManager;
 const INDEX_SECTION_PATTERN = /\[(\d{2}):(\d{2})\]\n([\s\S]*?)(?=\n\n\[\d{2}:\d{2}\]\n|$)/g;
+const DEFAULT_MCP_PROXY_URL = "https://vizlog-mcp-proxy.vizlog.workers.dev";
 
 type TabId = "controls" | "settings";
 
 type BannerState = { variant: "error" | "success"; message: string } | null;
-
-const fallbackAISettings: AISettings = {};
 
 const initialExclusionsConfig: ExclusionsConfig = {
   requires_restart: false,
@@ -112,8 +110,6 @@ export default function App() {
     activeRecordingChunk: false,
     trigger: null,
   });
-  const [mcpServerPath, setMcpServerPath] = useState<string>("");
-  const [aiSettings, setAISettings] = useState<AISettings>(fallbackAISettings);
   const [chunkDurationMinutes, setChunkDurationMinutes] = useState(1);
   const [exclusions, setExclusions] = useState<ExclusionsConfig>(initialExclusionsConfig);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -122,6 +118,7 @@ export default function App() {
     initialSckitExclusionsState
   );
   const [frameLightbox, setFrameLightbox] = useState<{ src: string; title: string } | null>(null);
+  const remoteMcpUrl = `${(import.meta.env.VITE_MCP_PROXY_URL?.trim() || DEFAULT_MCP_PROXY_URL).replace(/\/$/, "")}/v1/me/mcp`;
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -335,6 +332,7 @@ export default function App() {
     }
     try {
       await navigator.clipboard.writeText(value);
+      setBanner({ variant: "success", message: "Copied to clipboard." });
     } catch (err) {
       setBanner({
         variant: "error",
@@ -342,20 +340,6 @@ export default function App() {
       });
     }
   }, []);
-
-  const saveAISettings = useCallback(async () => {
-    try {
-      setBanner(null);
-      const updated = await contextManager.updateAISettings(aiSettings);
-      setAISettings(updated);
-      setBanner({ variant: "success", message: "Settings saved." });
-    } catch (err) {
-      setBanner({
-        variant: "error",
-        message: err instanceof Error ? err.message : "Failed to save Fireworks API key",
-      });
-    }
-  }, [aiSettings]);
 
   const saveChunkSettings = useCallback(async () => {
     try {
@@ -423,8 +407,7 @@ export default function App() {
 
   const saveAllSettings = useCallback(async () => {
     await saveChunkSettings();
-    await saveAISettings();
-  }, [saveChunkSettings, saveAISettings]);
+  }, [saveChunkSettings]);
 
   const formatDuration = (seconds: number) => {
     const m = Math.floor(seconds / 60);
@@ -489,19 +472,41 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (!contextManager || showOnboarding !== false) {
+      return;
+    }
+
+    let cancelled = false;
+
+    contextManager
+      .startTunnel()
+      .then((state) => {
+        if (cancelled) return;
+        if (!state.enabled && state.error) {
+          setBanner({ variant: "error", message: `Remote MCP unavailable: ${state.error}` });
+        }
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setBanner({
+          variant: "error",
+          message: err instanceof Error ? `Remote MCP unavailable: ${err.message}` : "Remote MCP unavailable",
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [showOnboarding]);
+
+  useEffect(() => {
     if (!contextManager) {
       return;
     }
 
     void refreshProcessingStatus();
-    void contextManager.getMcpServerPath().then((p) => {
-      setMcpServerPath(p);
-    });
     void contextManager.getChunkSettings().then((settings) => {
       setChunkDurationMinutes(settings.chunkDurationMinutes);
-    });
-    void contextManager.getAISettings().then((settings) => {
-      setAISettings(settings);
     });
     void contextManager.getExclusions().then((settings) => {
       setExclusions(settings);
@@ -541,17 +546,13 @@ export default function App() {
       : processingStatus.pendingChunks > 0
         ? "tone-pending"
         : "tone-ready";
-  const claudeConfigSnippet = mcpServerPath
-    ? JSON.stringify({ mcpServers: { basis: { command: "node", args: [mcpServerPath] } } }, null, 2)
-    : "";
-
   if (showOnboarding === null) return null;
   if (showOnboarding) return <Onboarding onComplete={() => setShowOnboarding(false)} />;
 
   return (
     <div className="app-shell">
       <div className="app-frame content-area">
-        <div className="tab-list" role="tablist" aria-label="JustReheat sections">
+        <div className="tab-list" role="tablist" aria-label="Vizlog sections">
           <button
             className={`tab-button ${activeTab === "controls" ? "is-active" : ""}`}
             onClick={() => setActiveTab("controls")}
@@ -618,36 +619,6 @@ export default function App() {
           <section className="panel panel-form">
             <div className="settings-stack">
               <div className="section-heading">
-                <h2 className="section-title">
-                  Fireworks API key{" "}
-                  <span className="tone-muted">(Important)</span>
-                </h2>
-              </div>
-
-              <label className="field-label" htmlFor="fireworks-api-key">
-                API key
-              </label>
-              <input
-                id="fireworks-api-key"
-                className="field-input"
-                type="password"
-                autoComplete="off"
-                spellCheck={false}
-                placeholder="Paste key if not using FIREWORKS_API_KEY in the environment"
-                value={aiSettings.fireworksApiKey ?? ""}
-                onChange={(event) =>
-                  setAISettings((current) => ({
-                    ...current,
-                    fireworksApiKey: event.target.value,
-                  }))
-                }
-              />
-              <p className="support-copy">
-                Image processing uses Fireworks, which respects a Zero Data Retention policy. Without your
-                API key here, JustReheat won't be able to run.
-              </p>
-
-              <div className="section-heading">
                 <h2 className="section-title">Capture settings</h2>
               </div>
 
@@ -675,11 +646,11 @@ export default function App() {
                 <h2 className="section-title">Privacy &mdash; Excluded Windows</h2>
               </div>
               <p className="support-copy">
-                Apps in this list are blocked at the OS level. Their pixels never enter JustReheat.
+                Apps in this list are blocked at the OS level. Their pixels never enter Vizlog.
               </p>
               {exclusions.requires_restart && (
                 <div className="banner banner-warning restart-banner">
-                  <span>Restart Basis to apply exclusion changes.</span>
+                  <span>Restart Vizlog to apply exclusion changes.</span>
                   <button className="button button-secondary" type="button" onClick={() => void contextManager.restartApp()}>
                     Restart Now
                   </button>
@@ -748,37 +719,21 @@ export default function App() {
               )}
 
               <div className="section-heading">
-                <h2 className="section-title">MCP Access (Local stdio)</h2>
+                <h2 className="section-title">Remote MCP (Claude.ai)</h2>
               </div>
-
               <p className="support-copy">
-                JustReheat runs as a local stdio MCP server. Connect Claude Desktop (or any MCP client
-                on your desktop) directly.
+                Use this URL when connecting Vizlog to Claude.ai. OAuth runs through Vizlog automatically.
               </p>
-
               <div className="info-card">
                 <div className="info-block">
-                  <div className="info-label">MCP Server Path</div>
-                  <div className="info-value">{mcpServerPath || "(loading...)"}</div>
+                  <div className="info-label">Remote MCP URL</div>
+                  <div className="info-value">{remoteMcpUrl}</div>
                   <button
                     className="button button-ghost"
-                    disabled={!mcpServerPath}
-                    onClick={() => void copyToClipboard(mcpServerPath)}
+                    onClick={() => void copyToClipboard(remoteMcpUrl)}
                     type="button"
                   >
-                    Copy Path
-                  </button>
-                </div>
-                <div className="info-block">
-                  <div className="info-label">Claude Desktop Config Snippet</div>
-                  <pre className="info-value" style={{ whiteSpace: "pre", fontSize: 11 }}>{claudeConfigSnippet}</pre>
-                  <button
-                    className="button button-ghost"
-                    disabled={!claudeConfigSnippet}
-                    onClick={() => void copyToClipboard(claudeConfigSnippet)}
-                    type="button"
-                  >
-                    Copy Config
+                    Copy URL
                   </button>
                 </div>
               </div>

@@ -1,5 +1,5 @@
 {
-  "name": "justreheat-landing",
+  "name": "vizlog-landing",
   "scripts": {
     "start": "npx serve ."
   }

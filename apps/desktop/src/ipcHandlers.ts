@@ -1,11 +1,8 @@
 import { app, ipcMain, desktopCapturer, BrowserWindow } from "electron";
-import * as path from "path";
 import {
   getUnprocessedFiles,
   getCurrentFile,
   getChunkDurationMs,
-  readAISettings,
-  writeAISettings,
   readChunkSettings,
   writeChunkSettings,
   startHotBuffer,
@@ -14,7 +11,6 @@ import {
   updateExclusions,
 } from "@context-manager/core";
 import type {
-  AISettings,
   ChunkSettings,
   ContextScope,
   ExclusionsConfig,
@@ -192,23 +188,6 @@ export function setupIpc(): void {
 
   ipcMain.handle("revoke-local-grant", () => {
     return revokeLocalGrant();
-  });
-
-  ipcMain.handle("get-mcp-server-path", () => {
-    if (app.isPackaged) {
-      return path.join(process.resourcesPath, "mcp-server", "dist", "server.js");
-    }
-    return path.join(__dirname, "..", "..", "mcp_server", "dist", "server.js");
-  });
-
-  // ── AI settings ──────────────────────────────────────────────────────────
-
-  ipcMain.handle("get-ai-settings", () => {
-    return readAISettings();
-  });
-
-  ipcMain.handle("update-ai-settings", (_event, payload: Partial<AISettings>) => {
-    return writeAISettings(payload || {});
   });
 
   // ── Credentials ──────────────────────────────────────────────────────────

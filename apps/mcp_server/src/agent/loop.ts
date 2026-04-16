@@ -164,7 +164,7 @@ export async function runAgentLoop(config: AgentConfig): Promise<AgentResult> {
   const creds = readCredentials();
   const client = creds?.authToken
     ? new Anthropic({
-        baseURL: process.env.VIZLOG_PROCESSING_URL || "https://process.vizlog.ai",
+        baseURL: process.env.VIZLOG_PROCESSING_URL || "https://vizlog-processing-proxy.vizlog.workers.dev",
         apiKey: creds.authToken, // jr_ token — proxy swaps for real Anthropic key
       })
     : new Anthropic();

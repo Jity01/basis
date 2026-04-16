@@ -12,6 +12,15 @@ CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_users_auth_token_hash ON users(auth_token_hash);
 CREATE INDEX IF NOT EXISTS idx_users_tunnel_id ON users(tunnel_id);
 
+CREATE TABLE IF NOT EXISTS tunnel_endpoints (
+  user_id INTEGER PRIMARY KEY,
+  endpoint_url TEXT NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_tunnel_endpoints_updated_at ON tunnel_endpoints(updated_at);
+
 CREATE TABLE IF NOT EXISTS oauth_clients (
   client_id TEXT PRIMARY KEY,
   client_name TEXT,

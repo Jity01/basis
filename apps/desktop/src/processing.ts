@@ -2,7 +2,6 @@ import {
   getUnprocessedFiles,
   getCurrentFile,
   processBacklog,
-  readAISettings,
 } from "@context-manager/core";
 import type { ProcessBacklogProgress, ProcessingTrigger, ProcessingStatus } from "@context-manager/config";
 import { sendToRenderer } from "./mainWindowRef";
@@ -83,12 +82,10 @@ export async function runBacklog(trigger: ProcessingTrigger, shouldContinue: () 
   emitProcessingStatus();
 
   try {
-    const aiSettings = readAISettings();
     await processBacklog(getCurrentFile, shouldContinue, {
       onProgress: (progress) => {
         updateProgress(progress);
       },
-      aiSettings,
     });
   } finally {
     processingState.isProcessing = false;

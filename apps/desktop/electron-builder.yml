@@ -1,6 +1,6 @@
 # https://www.electron.build/configuration/configuration
-appId: com.basislabs.justreheat
-productName: JustReheat
+appId: com.vizlog.app
+productName: Vizlog
 copyright: Copyright © Basis Labs
 # pnpm hoists electron to the repo root; pin the version for the packager.
 electronVersion: 33.4.11

@@ -2,7 +2,6 @@ import "./loadRepoEnv";
 import * as fs from "fs/promises";
 import * as fsSync from "fs";
 import * as path from "path";
-import type { AISettings } from "@context-manager/config";
 import { DEFAULT_WIKI_TEXT_MODEL, readCredentials } from "@context-manager/config";
 import {
   NARRATOR_SYSTEM_PROMPT,
@@ -15,35 +14,18 @@ const DEFAULT_VL_MODEL =
   process.env.FIREWORKS_VL_MODEL?.trim() ||
   process.env.FIREWORKS_MODEL?.trim() ||
   "accounts/fireworks/models/qwen3-vl-30b-a3b-instruct";
-const DEFAULT_FIREWORKS_BASE_URL = "https://api.fireworks.ai/inference/v1";
+const DEFAULT_VIZLOG_PROCESSING_URL = "https://vizlog-processing-proxy.vizlog.workers.dev/v1";
 
 type VisionContentPart =
   | { type: "text"; text: string }
   | { type: "image_url"; image_url: { url: string } };
 
-function getApiKey(settings?: AISettings): string {
-  const fromEnv = process.env.FIREWORKS_API_KEY?.trim();
-  if (fromEnv) {
-    return fromEnv;
-  }
-  const fromSettings = settings?.fireworksApiKey?.trim();
-  if (fromSettings) {
-    return fromSettings;
-  }
-  throw new Error(
-    "Missing Fireworks API key. Set FIREWORKS_API_KEY in the environment or add it in Settings."
-  );
-}
-
-const VIZLOG_PROCESSING_URL = "https://process.vizlog.ai/v1";
-
 function getFireworksBaseUrl(): string {
-  // In hosted mode, route through Vizlog's processing proxy
   const creds = readCredentials();
-  if (creds?.authToken) {
-    return process.env.VIZLOG_PROCESSING_URL?.trim() || VIZLOG_PROCESSING_URL;
+  if (!creds?.authToken) {
+    throw new Error("Missing Vizlog authentication token. Sign in from the desktop app onboarding flow.");
   }
-  return process.env.FIREWORKS_BASE_URL?.trim() || DEFAULT_FIREWORKS_BASE_URL;
+  return process.env.VIZLOG_PROCESSING_URL?.trim() || DEFAULT_VIZLOG_PROCESSING_URL;
 }
 
 function getVlModel(): string {
@@ -55,18 +37,14 @@ function getChatUrl(): string {
   return `${baseUrl.replace(/\/$/, "")}/chat/completions`;
 }
 
-function getChatHeaders(settings?: AISettings): Record<string, string> {
-  // In hosted mode, use the Vizlog auth token instead of Fireworks key
+function getChatHeaders(): Record<string, string> {
   const creds = readCredentials();
-  if (creds?.authToken) {
-    return {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${creds.authToken}`,
-    };
+  if (!creds?.authToken) {
+    throw new Error("Missing Vizlog authentication token. Sign in from the desktop app onboarding flow.");
   }
   return {
     "Content-Type": "application/json",
-    Authorization: `Bearer ${getApiKey(settings)}`,
+    Authorization: `Bearer ${creds.authToken}`,
   };
 }
 
@@ -147,8 +125,7 @@ export function normalizeKeyFrames(indices: number[], numFrames: number): number
 }
 
 export async function callNarratorVlm(
-  framePaths: string[],
-  settings?: AISettings
+  framePaths: string[]
 ): Promise<string> {
   const n = framePaths.length;
   const intro =
@@ -178,7 +155,7 @@ export async function callNarratorVlm(
 
   const response = await fetch(getChatUrl(), {
     method: "POST",
-    headers: getChatHeaders(settings),
+    headers: getChatHeaders(),
     body: JSON.stringify(payload),
   });
 
@@ -198,8 +175,7 @@ export async function callNarratorVlm(
 }
 
 export async function callFormattedOcrVl(
-  imagePath: string,
-  settings?: AISettings
+  imagePath: string
 ): Promise<string> {
   const buf = await fs.readFile(imagePath);
   const b64 = buf.toString("base64");
@@ -223,7 +199,7 @@ export async function callFormattedOcrVl(
 
   const response = await fetch(getChatUrl(), {
     method: "POST",
-    headers: getChatHeaders(settings),
+    headers: getChatHeaders(),
     body: JSON.stringify(payload),
   });
 
@@ -386,8 +362,7 @@ export function parseWikiResponse(content: string): { operations: WikiOperation[
 
 export async function callWikiTextModel(
   wikiState: string,
-  framesText: string,
-  settings?: AISettings
+  framesText: string
 ): Promise<string> {
   const system = getMergedWikiSystemPrompt();
   const userMessage = `## Current wiki state\n\n${wikiState}\n\n## New frames\n\n${framesText}${WIKI_JSON_USER_SUFFIX}`;
@@ -404,10 +379,7 @@ export async function callWikiTextModel(
 
   const response = await fetch(`${getFireworksBaseUrl().replace(/\/$/, "")}/chat/completions`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${getApiKey(settings)}`,
-    },
+    headers: getChatHeaders(),
     body: JSON.stringify(payload),
   });
 

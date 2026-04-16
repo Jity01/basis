@@ -8,7 +8,7 @@ import {
   RETRY_DELAY_MS,
   wikiRootPath,
 } from "@context-manager/config";
-import type { AISettings, ProcessBacklogProgress, ProcessBacklogOptions } from "@context-manager/config";
+import type { ProcessBacklogProgress, ProcessBacklogOptions } from "@context-manager/config";
 import { extractFrames } from "./frames";
 import { readChunkDurationMsForFile } from "./recorder";
 import {
@@ -144,8 +144,7 @@ async function getBacklogFiles(currentFile: string | null): Promise<BacklogItem[
 async function maybeEnqueueWiki(
   chunkStart: Date,
   temporalDescription: string,
-  ocrTexts: string[],
-  aiSettings?: AISettings
+  ocrTexts: string[]
 ): Promise<void> {
   try {
     const wikiDir = wikiRootPath(CONTEXT_ROOT);
@@ -157,7 +156,7 @@ async function maybeEnqueueWiki(
       temporal_description: temporalDescription,
       ocr_texts: ocrTexts,
     });
-    const raw = await callWikiTextModel(wikiState, framesText, aiSettings);
+    const raw = await callWikiTextModel(wikiState, framesText);
     const { operations } = parseWikiResponse(raw);
     if (!operations.length) {
       console.warn(`[pipeline] wiki model returned 0 operations. Raw (first 500 chars): ${raw.slice(0, 500)}`);
@@ -175,7 +174,7 @@ async function maybeEnqueueWiki(
   }
 }
 
-async function processOneChunk(item: BacklogItem, aiSettings?: AISettings): Promise<void> {
+async function processOneChunk(item: BacklogItem): Promise<void> {
   const chunkStart = item.chunkStart;
   const chunkEnd = new Date(chunkStart.getTime() + item.chunkDurationMs);
 
@@ -188,7 +187,7 @@ async function processOneChunk(item: BacklogItem, aiSettings?: AISettings): Prom
   );
 
   try {
-    const rawNarrator = await callNarratorVlm(allFrames, aiSettings);
+    const rawNarrator = await callNarratorVlm(allFrames);
 
     let keyIx: number[] = [];
     try {
@@ -201,7 +200,7 @@ async function processOneChunk(item: BacklogItem, aiSettings?: AISettings): Prom
     const ocrTexts: string[] = [];
     for (const srcIdx of keyIx) {
       const fp = allFrames[srcIdx - 1]!;
-      const txt = await callFormattedOcrVl(fp, aiSettings);
+      const txt = await callFormattedOcrVl(fp);
       ocrTexts.push(txt);
     }
 
@@ -227,7 +226,7 @@ async function processOneChunk(item: BacklogItem, aiSettings?: AISettings): Prom
       CONTEXT_ROOT
     );
 
-    await maybeEnqueueWiki(chunkStart, rawNarrator.trim(), ocrTexts, aiSettings);
+    await maybeEnqueueWiki(chunkStart, rawNarrator.trim(), ocrTexts);
 
     await deleteRawVideo(item.filePath);
   } finally {
@@ -237,11 +236,10 @@ async function processOneChunk(item: BacklogItem, aiSettings?: AISettings): Prom
 
 async function processChunkWithRetry(
   item: BacklogItem,
-  aiSettings?: AISettings
 ): Promise<boolean> {
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
-      await processOneChunk(item, aiSettings);
+      await processOneChunk(item);
       return true;
     } catch (err: unknown) {
       if (attempt === MAX_RETRIES) {
@@ -299,7 +297,7 @@ export async function processBacklog(
           filePath: item.filePath,
         });
 
-        const ok = await processChunkWithRetry(item, options.aiSettings);
+        const ok = await processChunkWithRetry(item);
         if (ok) {
           const c = await incrementCompleted();
           options.onProgress?.({
