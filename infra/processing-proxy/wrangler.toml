@@ -4,7 +4,7 @@ compatibility_date = "2024-12-01"
 
 [vars]
 AUTH_SERVICE_URL = "https://vizlog-auth.vizlog.workers.dev"
-FIREWORKS_BASE_URL = "https://api.fireworks.ai/inference/v1"
+FIREWORKS_BASE_URL = "https://api.fireworks.ai/inference"
 ANTHROPIC_BASE_URL = "https://api.anthropic.com"
 
 [[services]]
